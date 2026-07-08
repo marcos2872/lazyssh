@@ -2,12 +2,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug)]
-pub struct FileInfo {
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
-}
+use super::FileInfo;
 
 pub struct LocalFs {
     current_dir: PathBuf,

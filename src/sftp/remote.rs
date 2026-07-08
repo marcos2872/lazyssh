@@ -1,13 +1,7 @@
 use anyhow::Result;
 
+use super::FileInfo;
 use crate::ssh::SshSession;
-
-#[derive(Debug)]
-pub struct FileInfo {
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
-}
 
 pub struct RemoteFs {
     current_dir: String,
@@ -45,9 +39,10 @@ impl RemoteFs {
     }
 
     pub async fn cd(&mut self, session: &SshSession, path: &str) -> Result<()> {
-        let output = session
-            .execute(&format!("cd {} && pwd", path))
-            .await?;
+        let output = session.execute(&format!("cd {} && pwd", path)).await?;
+        if output.trim().is_empty() {
+            return Err(anyhow::anyhow!("Failed to cd to {}", path));
+        }
         self.current_dir = output.trim().to_string();
         Ok(())
     }
