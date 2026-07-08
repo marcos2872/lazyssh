@@ -35,8 +35,18 @@ impl SftpState {
 
     pub fn next_item(&mut self) {
         match self.focus_side {
-            Side::Local => self.local_selected += 1,
-            Side::Remote => self.remote_selected += 1,
+            Side::Local => {
+                let len = self.local.list().unwrap_or_default().len();
+                if len > 0 && self.local_selected < len - 1 {
+                    self.local_selected += 1;
+                }
+            }
+            Side::Remote => {
+                let len = self.remote.len();
+                if len > 0 && self.remote_selected < len - 1 {
+                    self.remote_selected += 1;
+                }
+            }
         }
     }
 
@@ -76,6 +86,12 @@ pub fn render_sftp_browser(f: &mut Frame, state: &SftpState) {
 fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
     let files = state.local.list().unwrap_or_default();
 
+    let title = if state.focus_side == Side::Local {
+        format!("Local: {} [FOCUS]", state.local.current_dir().display())
+    } else {
+        format!("Local: {}", state.local.current_dir().display())
+    };
+
     let items: Vec<ListItem> = files
         .iter()
         .map(|file| {
@@ -96,7 +112,7 @@ fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Local: {}", state.local.current_dir().display())),
+                .title(title),
         )
         .highlight_style(
             Style::default()
@@ -111,11 +127,17 @@ fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
 }
 
 fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
+    let title = if state.focus_side == Side::Remote {
+        format!("Remote: {} [FOCUS]", state.remote.current_dir())
+    } else {
+        format!("Remote: {}", state.remote.current_dir())
+    };
+
     let placeholder = Paragraph::new("Remote SFTP\n(Connect to server first)")
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Remote: {}", state.remote.current_dir())),
+                .title(title),
         );
     f.render_widget(placeholder, area);
 }

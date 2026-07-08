@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use anyhow::Result;
 
 use super::FileInfo;
@@ -5,19 +7,25 @@ use crate::ssh::SshSession;
 
 pub struct RemoteFs {
     current_dir: String,
+    cached_len: Cell<usize>,
 }
 
 impl RemoteFs {
     pub fn new() -> Self {
         Self {
             current_dir: "/".to_string(),
+            cached_len: Cell::new(0),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.cached_len.get()
     }
 
     pub async fn list(&self, session: &SshSession) -> Result<Vec<FileInfo>> {
         let output = session.execute(&format!("ls -la {}", self.current_dir)).await?;
         // Parse ls output - simplified
-        let entries = output
+        let entries: Vec<FileInfo> = output
             .lines()
             .filter_map(|line| {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -35,6 +43,7 @@ impl RemoteFs {
                 }
             })
             .collect();
+        self.cached_len.set(entries.len());
         Ok(entries)
     }
 
