@@ -10,27 +10,9 @@ pub fn execute_ssh_command(server: &Server, command: &str) -> Result<String, Str
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    let mut args = vec![
-        "-o".to_string(),
-        "StrictHostKeyChecking=no".to_string(),
-        "-o".to_string(),
-        "ConnectTimeout=5".to_string(),
-    ];
-
-    // Adicionar porta se não for 22
-    if server.port != 22 {
-        args.push("-p".to_string());
-        args.push(server.port.to_string());
-    }
-
-    // Tratar autenticação
-    match &server.auth {
-        Auth::Key { path, .. } => {
-            args.push("-i".to_string());
-            args.push(path.clone());
-        }
+    // Verificar autenticação por senha antes de construir args
+    let password = match &server.auth {
         Auth::Password { vault_key } => {
-            // Para autenticação por senha, precisamos de sshpass
             if !has_sshpass {
                 return Err(
                     "Autenticação por senha requer 'sshpass'. \
@@ -39,28 +21,52 @@ pub fn execute_ssh_command(server: &Server, command: &str) -> Result<String, Str
                         .to_string(),
                 );
             }
+            if vault_key.is_empty() {
+                return Err("Senha não configurada. Configure a senha no servidor.".to_string());
+            }
+            Some(vault_key.clone())
         }
+        _ => None,
+    };
+
+    // Construir argumentos do SSH
+    let mut ssh_args = vec![
+        "-o".to_string(),
+        "StrictHostKeyChecking=no".to_string(),
+        "-o".to_string(),
+        "ConnectTimeout=5".to_string(),
+    ];
+
+    // Adicionar porta se não for 22
+    if server.port != 22 {
+        ssh_args.push("-p".to_string());
+        ssh_args.push(server.port.to_string());
+    }
+
+    // Adicionar chave se for autenticação por chave
+    if let Auth::Key { path, .. } = &server.auth {
+        ssh_args.push("-i".to_string());
+        ssh_args.push(path.clone());
     }
 
     // Adicionar usuário e host
     let user_host = format!("{}@{}", server.user, server.host);
-    args.push(user_host);
-    args.push(command.to_string());
+    ssh_args.push(user_host);
+    ssh_args.push(command.to_string());
 
-    // Se for autenticação por senha, usar sshpass
-    let (program, cmd_args) = if let Auth::Password { vault_key } = &server.auth {
-        if vault_key.is_empty() {
-            return Err("Senha não configurada. Configure a senha no servidor.".to_string());
-        }
-        let mut sshpass_args = vec!["-p".to_string(), vault_key.clone()];
-        sshpass_args.extend(args);
-        ("sshpass".to_string(), sshpass_args)
+    // Construir comando final
+    let (program, final_args) = if let Some(pass) = password {
+        // sshpass -p <password> ssh <args>
+        let mut args = vec!["-p".to_string(), pass];
+        args.extend(ssh_args);
+        ("sshpass".to_string(), args)
     } else {
-        ("ssh".to_string(), args)
+        // ssh <args>
+        ("ssh".to_string(), ssh_args)
     };
 
     let output = Command::new(&program)
-        .args(&cmd_args)
+        .args(&final_args)
         .output()
         .map_err(|e| format!("Falha ao executar SSH: {}", e))?;
 
