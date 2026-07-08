@@ -59,4 +59,14 @@ impl LocalFs {
         fs::write(local_path, remote_content)?;
         Ok(())
     }
+
+    pub fn get_file_size(&self, filename: &str) -> Result<u64> {
+        let path = self.current_dir.join(filename);
+        let metadata = fs::metadata(path)?;
+        Ok(metadata.len())
+    }
+
+    pub fn get_full_path(&self, filename: &str) -> String {
+        self.current_dir.join(filename).to_string_lossy().to_string()
+    }
 }

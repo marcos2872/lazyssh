@@ -99,9 +99,98 @@ impl RemoteFs {
             format!("{}/{}", self.current_dir, remote_path)
         };
 
-        execute_ssh_command(server, &format!("cat \"{}\" > \"{}\"", local_path, full_remote))
+        // Usar SCP para upload
+        use std::process::Command;
+
+        let user_host = format!("{}@{}", server.user, server.host);
+        let remote_target = format!("{}:{}", user_host, full_remote);
+        let port_str = server.port.to_string();
+
+        let mut args = vec![
+            "-o", "StrictHostKeyChecking=no",
+            "-P", &port_str,
+        ];
+
+        // Adicionar chave se existir
+        if let crate::config::models::Auth::Key { path, .. } = &server.auth {
+            args.push("-i");
+            args.push(path);
+        }
+
+        args.push(local_path);
+        args.push(&remote_target);
+
+        let output = Command::new("scp")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("Failed to run scp: {}", e))?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("SCP upload failed: {}", stderr))
+        }
+    }
+
+    pub fn download(&self, remote_path: &str, local_path: &str) -> Result<(), String> {
+        let server = self.server.as_ref()
+            .ok_or_else(|| "No server connected".to_string())?;
+
+        let full_remote = if remote_path.starts_with('/') {
+            remote_path.to_string()
+        } else {
+            format!("{}/{}", self.current_dir, remote_path)
+        };
+
+        // Usar SCP para download
+        use std::process::Command;
+
+        let user_host = format!("{}@{}", server.user, server.host);
+        let remote_source = format!("{}:{}", user_host, full_remote);
+        let port_str = server.port.to_string();
+
+        let mut args = vec![
+            "-o", "StrictHostKeyChecking=no",
+            "-P", &port_str,
+        ];
+
+        // Adicionar chave se existir
+        if let crate::config::models::Auth::Key { path, .. } = &server.auth {
+            args.push("-i");
+            args.push(path);
+        }
+
+        args.push(&remote_source);
+        args.push(local_path);
+
+        let output = Command::new("scp")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("Failed to run scp: {}", e))?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("SCP download failed: {}", stderr))
+        }
+    }
+
+    pub fn get_file_size(&self, remote_path: &str) -> Result<u64, String> {
+        let server = self.server.as_ref()
+            .ok_or_else(|| "No server connected".to_string())?;
+
+        let full_remote = if remote_path.starts_with('/') {
+            remote_path.to_string()
+        } else {
+            format!("{}/{}", self.current_dir, remote_path)
+        };
+
+        let output = execute_ssh_command(server, &format!("stat -c %s \"{}\"", full_remote))
             .map_err(|e| e.to_string())?;
-        Ok(())
+
+        output.trim().parse::<u64>().map_err(|e| format!("Invalid size: {}", e))
     }
 
     pub fn get_file_content(&self, remote_path: &str) -> Result<String, String> {

@@ -471,7 +471,15 @@ async fn main() -> Result<()> {
                         }
                         tui::app::CurrentView::SftpBrowser => {
                             match key.code {
-                                KeyCode::Char('q') | KeyCode::Esc => app.close_sftp(),
+                                KeyCode::Char('q') | KeyCode::Esc => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if !sftp.local_selected_files.is_empty() || !sftp.remote_selected_files.is_empty() {
+                                            sftp.clear_selection();
+                                        } else {
+                                            app.close_sftp();
+                                        }
+                                    }
+                                }
                                 KeyCode::Tab => {
                                     if let Some(sftp) = &mut app.sftp_state {
                                         sftp.toggle_focus();
@@ -501,19 +509,139 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
-                                KeyCode::Char('u') => {
+                                KeyCode::Char(' ') => {
+                                    // Selecionar/desselecionar arquivo
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        match sftp.upload_selected() {
-                                            Ok(msg) => app.notifications.success(&msg),
-                                            Err(e) => app.notifications.error(&e),
+                                        sftp.toggle_select_current();
+                                    }
+                                }
+                                KeyCode::Char('a') => {
+                                    // Selecionar todos
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        sftp.select_all_current();
+                                        let count = match sftp.focus_side {
+                                            tui::sftp_browser::Side::Local => sftp.local_selected_files.len(),
+                                            tui::sftp_browser::Side::Remote => sftp.remote_selected_files.len(),
+                                        };
+                                        app.notifications.info(&format!("{} arquivo(s) selecionado(s)", count));
+                                    }
+                                }
+                                KeyCode::Char('u') => {
+                                    // Upload arquivo(s) selecionado(s)
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else {
+                                            let files: Vec<(String, u64)> = match sftp.focus_side {
+                                                tui::sftp_browser::Side::Local => {
+                                                    if !sftp.local_selected_files.is_empty() {
+                                                        sftp.local_selected_files.iter()
+                                                            .filter_map(|&i| sftp.local_files.get(i))
+                                                            .filter(|f| !f.is_dir)
+                                                            .map(|f| (f.name.clone(), f.size))
+                                                            .collect()
+                                                    } else if let Some(file) = sftp.local_files.get(sftp.local_selected) {
+                                                        if !file.is_dir {
+                                                            vec![(file.name.clone(), file.size)]
+                                                        } else {
+                                                            vec![]
+                                                        }
+                                                    } else {
+                                                        vec![]
+                                                    }
+                                                }
+                                                tui::sftp_browser::Side::Remote => vec![],
+                                            };
+
+                                            if files.is_empty() {
+                                                app.notifications.warning("Nenhum arquivo para upload");
+                                            } else {
+                                                let total_size: u64 = files.iter().map(|(_, s)| s).sum();
+                                                let file_name = if files.len() == 1 {
+                                                    files[0].0.clone()
+                                                } else {
+                                                    format!("{} arquivos", files.len())
+                                                };
+                                                sftp.start_transfer(file_name, total_size, true);
+                                                app.notifications.info(&format!("Enviando {} arquivo(s)...", files.len()));
+
+                                                // Upload via SCP
+                                                let server = sftp.remote.server.clone();
+                                                if let Some(server) = server {
+                                                    for (name, _) in &files {
+                                                        let local_path = sftp.local.get_full_path(name);
+                                                        let remote_path = format!("{}/{}", sftp.remote.current_dir, name);
+                                                        match sftp.remote.upload(&local_path, &remote_path) {
+                                                            Ok(_) => {
+                                                                app.notifications.success(&format!("Enviado: {}", name));
+                                                            }
+                                                            Err(e) => {
+                                                                app.notifications.error(&format!("Erro ao enviar {}: {}", name, e));
+                                                            }
+                                                        }
+                                                    }
+                                                    sftp.refresh_remote();
+                                                    sftp.finish_transfer();
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 KeyCode::Char('d') => {
+                                    // Download arquivo(s) selecionado(s)
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        match sftp.download_selected() {
-                                            Ok(msg) => app.notifications.success(&msg),
-                                            Err(e) => app.notifications.error(&e),
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else {
+                                            let files: Vec<(String, u64)> = match sftp.focus_side {
+                                                tui::sftp_browser::Side::Remote => {
+                                                    if !sftp.remote_selected_files.is_empty() {
+                                                        sftp.remote_selected_files.iter()
+                                                            .filter_map(|&i| sftp.remote_files.get(i))
+                                                            .filter(|f| !f.is_dir)
+                                                            .map(|f| (f.name.clone(), f.size))
+                                                            .collect()
+                                                    } else if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {
+                                                        if !file.is_dir {
+                                                            vec![(file.name.clone(), file.size)]
+                                                        } else {
+                                                            vec![]
+                                                        }
+                                                    } else {
+                                                        vec![]
+                                                    }
+                                                }
+                                                tui::sftp_browser::Side::Local => vec![],
+                                            };
+
+                                            if files.is_empty() {
+                                                app.notifications.warning("Nenhum arquivo para download");
+                                            } else {
+                                                let total_size: u64 = files.iter().map(|(_, s)| s).sum();
+                                                let file_name = if files.len() == 1 {
+                                                    files[0].0.clone()
+                                                } else {
+                                                    format!("{} arquivos", files.len())
+                                                };
+                                                sftp.start_transfer(file_name, total_size, false);
+                                                app.notifications.info(&format!("Baixando {} arquivo(s)...", files.len()));
+
+                                                // Download via SCP
+                                                for (name, _) in &files {
+                                                    let remote_path = format!("{}/{}", sftp.remote.current_dir, name);
+                                                    let local_path = sftp.local.get_full_path(name);
+                                                    match sftp.remote.download(&remote_path, &local_path) {
+                                                        Ok(_) => {
+                                                            app.notifications.success(&format!("Baixado: {}", name));
+                                                        }
+                                                        Err(e) => {
+                                                            app.notifications.error(&format!("Erro ao baixar {}: {}", name, e));
+                                                        }
+                                                    }
+                                                }
+                                                sftp.refresh_local();
+                                                sftp.finish_transfer();
+                                            }
                                         }
                                     }
                                 }
