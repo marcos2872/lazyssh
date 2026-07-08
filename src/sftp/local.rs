@@ -53,4 +53,10 @@ impl LocalFs {
     pub fn current_dir(&self) -> &Path {
         &self.current_dir
     }
+
+    pub fn download(&self, remote_content: &str, local_filename: &str) -> Result<()> {
+        let local_path = self.current_dir.join(local_filename);
+        fs::write(local_path, remote_content)?;
+        Ok(())
+    }
 }

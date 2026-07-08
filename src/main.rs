@@ -489,19 +489,39 @@ async fn main() -> Result<()> {
                                 }
                                 KeyCode::Enter => {
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        let files = sftp.local.list().unwrap_or_default();
-                                        if let Some(file) = files.get(sftp.local_selected) {
-                                            if file.is_dir {
-                                                let _ = sftp.local.cd(&file.name);
-                                                sftp.local_selected = 0;
-                                            }
+                                        if let Err(e) = sftp.enter_directory() {
+                                            app.notifications.warning(&e);
                                         }
                                     }
                                 }
                                 KeyCode::Backspace => {
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        let _ = sftp.local.cd("..");
-                                        sftp.local_selected = 0;
+                                        if let Err(e) = sftp.go_parent() {
+                                            app.notifications.warning(&e);
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('u') => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        match sftp.upload_selected() {
+                                            Ok(msg) => app.notifications.success(&msg),
+                                            Err(e) => app.notifications.error(&e),
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('d') => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        match sftp.download_selected() {
+                                            Ok(msg) => app.notifications.success(&msg),
+                                            Err(e) => app.notifications.error(&e),
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('r') => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        sftp.refresh_remote();
+                                        sftp.refresh_local();
+                                        app.notifications.info("Atualizado!");
                                     }
                                 }
                                 _ => {}

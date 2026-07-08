@@ -414,8 +414,12 @@ impl App {
     }
 
     pub fn open_sftp(&mut self) {
-        self.current_view = CurrentView::SftpBrowser;
-        self.sftp_state = Some(SftpState::new());
+        if let Some(server) = self.selected_server() {
+            let server = server.clone();
+            self.current_view = CurrentView::SftpBrowser;
+            self.sftp_state = Some(SftpState::new(server));
+            self.notifications.info("SFTP conectado!");
+        }
     }
 
     pub fn close_sftp(&mut self) {
