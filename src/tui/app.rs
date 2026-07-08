@@ -2,6 +2,7 @@ use crate::config::models::{Auth, Server};
 use crate::ssh::execute_ssh_command;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use super::effects::AppEffects;
 use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
 use super::ssh_terminal::SshTerminalState;
@@ -315,7 +316,6 @@ pub enum CurrentView {
     SftpBrowser,
 }
 
-#[derive(Debug)]
 pub struct App {
     pub servers: Vec<Server>,
     pub filtered_indices: Vec<usize>,
@@ -329,6 +329,7 @@ pub struct App {
     pub insert_state: Option<InsertState>,
     pub edit_state: Option<EditState>,
     pub notifications: NotificationQueue,
+    pub effects: AppEffects,
 }
 
 impl App {
@@ -353,6 +354,7 @@ impl App {
             insert_state: None,
             edit_state: None,
             notifications,
+            effects: AppEffects::new(),
         }
     }
 
