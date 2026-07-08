@@ -1,0 +1,19 @@
+[package]
+name = "lazyssh"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+ratatui = "0.29"
+crossterm = "0.28"
+russh = "0.50.0-beta.7"
+russh-keys = "0.50.0-beta.7"
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+ring = "0.17"
+pbkdf2 = "0.12"
+rand = "0.8"
+anyhow = "1"
+dirs = "5"
+fuzzy-matcher = "0.3"
