@@ -392,21 +392,48 @@ async fn main() -> Result<()> {
                                 KeyCode::Char('q') | KeyCode::Esc => app.close_ssh(),
                                 KeyCode::Char(c) => {
                                     if let Some(ssh) = &mut app.ssh_state {
-                                        ssh.input.push(c);
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.input.push(c);
+                                        }
                                     }
                                 }
                                 KeyCode::Backspace => {
                                     if let Some(ssh) = &mut app.ssh_state {
-                                        ssh.input.pop();
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.input.pop();
+                                        }
                                     }
                                 }
                                 KeyCode::Enter => {
                                     if let Some(ssh) = &mut app.ssh_state {
-                                        let cmd = ssh.input.clone();
-                                        ssh.output.push(format!("> {}", cmd));
-                                        ssh.output
-                                            .push("(comando não executado - demo)".to_string());
-                                        ssh.input.clear();
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            let cmd = ssh.input.clone();
+                                            ssh.output.push(format!("> {}", cmd));
+
+                                            if cmd.trim() == "exit" || cmd.trim() == "quit" {
+                                                ssh.set_disconnected();
+                                                app.current_view = tui::app::CurrentView::ServerList;
+                                            } else if !cmd.trim().is_empty() {
+                                                // Executar comando via SSH
+                                                if let Some(server) = &ssh.server {
+                                                    let server = server.clone();
+                                                    let output = ssh::execute_ssh_command(&server, &cmd);
+                                                    match output {
+                                                        Ok(out) => {
+                                                            if !out.is_empty() {
+                                                                for line in out.lines() {
+                                                                    ssh.add_output(line.to_string());
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            ssh.set_error(e.to_string());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ssh.input.clear();
+                                        }
                                     }
                                 }
                                 _ => {}

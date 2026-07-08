@@ -1,4 +1,5 @@
 use crate::config::models::{Auth, Server};
+use crate::ssh::execute_ssh_command;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use super::sftp_browser::SftpState;
@@ -412,10 +413,30 @@ impl App {
     }
 
     pub fn connect_ssh(&mut self) {
-        let server_name = self.selected_server().map(|s| s.name.clone());
-        if let Some(name) = server_name {
+        if let Some(server) = self.selected_server() {
+            let server = server.clone();
             self.current_view = CurrentView::SshTerminal;
-            self.ssh_state = Some(SshTerminalState::new(name));
+
+            let mut state = SshTerminalState::new(server.clone());
+            state.output.clear();
+
+            // Testar conexão com um comando simples
+            let test_output = execute_ssh_command(&server, "echo 'Conexao OK'");
+
+            match test_output {
+                Ok(output) => {
+                    let session_id = format!("{}@{}", server.user, server.host);
+                    state.set_connected(session_id);
+                    if !output.trim().is_empty() {
+                        state.add_output(output.trim().to_string());
+                    }
+                }
+                Err(e) => {
+                    state.set_error(e);
+                }
+            }
+
+            self.ssh_state = Some(state);
         }
     }
 
