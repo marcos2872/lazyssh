@@ -151,33 +151,40 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         SshStatus::Disconnected => "Desconectado",
     };
 
-    // Construir todas as linhas do terminal
-    let mut lines: Vec<Line> = vec![];
+    // Espaço útil = total - bordas(2) - linha do prompt(1)
+    let usable_height = area.height.saturating_sub(3) as usize;
 
-    // Calcular quantas linhas cabem na tela (área útil - bordas - 1 para prompt)
-    let visible_height = area.height.saturating_sub(2) as usize; // -2 para bordas
+    // Construir linhas do output com scroll
+    let mut output_lines: Vec<Line> = vec![];
+    let total_output = state.output.len();
 
-    // Adicionar output existente com scroll
-    let total_lines = state.output.len();
-    let start_idx = if total_lines > visible_height {
-        total_lines.saturating_sub(visible_height + state.scroll_offset)
+    // Calcular quantas linhas mostrar
+    let lines_to_show = if total_output > usable_height {
+        usable_height
     } else {
-        0
+        total_output
     };
 
-    for i in start_idx..total_lines {
-        lines.push(Line::from(Span::raw(&state.output[i])));
+    // Calcular índice inicial baseado no scroll
+    let end_idx = total_output.saturating_sub(state.scroll_offset);
+    let start_idx = end_idx.saturating_sub(lines_to_show);
+
+    for i in start_idx..end_idx {
+        output_lines.push(Line::from(Span::raw(&state.output[i])));
     }
 
-    // Adicionar linha de comando atual (prompt + input)
+    // Adicionar linhas vazias para preencher se output for menor que altura
+    while output_lines.len() < usable_height {
+        output_lines.insert(0, Line::from(""));
+    }
+
+    // Adicionar linha do prompt/input
     match &state.status {
         SshStatus::Connected => {
             let prompt = state.prompt();
             let prompt_str = prompt.clone();
 
-            // Texto antes do cursor
             let before_cursor = &state.input[..state.cursor_pos];
-            // Texto depois do cursor (se houver)
             let after_cursor = &state.input[state.cursor_pos..];
 
             let mut spans = vec![
@@ -185,42 +192,38 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
                 Span::styled(before_cursor.to_string(), Style::default().fg(Color::White)),
             ];
 
-            // Se cursor está no meio, mostra caractere sob cursor + resto
             if !after_cursor.is_empty() {
                 let mut chars = after_cursor.chars();
                 if let Some(cursor_char) = chars.next() {
-                    // Caractere sob o cursor (invertido)
                     spans.push(Span::styled(
                         cursor_char.to_string(),
                         Style::default().fg(Color::Black).bg(Color::Green),
                     ));
-                    // Resto do texto
                     let remaining: String = chars.collect();
                     if !remaining.is_empty() {
                         spans.push(Span::styled(remaining, Style::default().fg(Color::White)));
                     }
                 }
             } else {
-                // Cursor no final - mostra bloco
                 spans.push(Span::styled("█", Style::default().fg(Color::Green)));
             }
 
-            lines.push(Line::from(spans));
+            output_lines.push(Line::from(spans));
         }
         SshStatus::Connecting => {
-            lines.push(Line::from(Span::styled(
+            output_lines.push(Line::from(Span::styled(
                 "Conectando...",
                 Style::default().fg(Color::Yellow),
             )));
         }
         SshStatus::Error(_) => {
-            lines.push(Line::from(Span::styled(
+            output_lines.push(Line::from(Span::styled(
                 "Pressione 'q' ou Esc para voltar",
                 Style::default().fg(Color::Red),
             )));
         }
         SshStatus::Disconnected => {
-            lines.push(Line::from(Span::styled(
+            output_lines.push(Line::from(Span::styled(
                 "Desconectado. Pressione 'q' para voltar.",
                 Style::default().fg(Color::Gray),
             )));
@@ -242,6 +245,6 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         ))
         .title_style(Style::default().fg(status_color));
 
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(output_lines).block(block);
     f.render_widget(paragraph, area);
 }
