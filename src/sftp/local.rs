@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::FileInfo;
 
+#[derive(Debug)]
 pub struct LocalFs {
     current_dir: PathBuf,
 }

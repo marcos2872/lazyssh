@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::FileInfo;
 use crate::ssh::SshSession;
 
+#[derive(Debug)]
 pub struct RemoteFs {
     current_dir: String,
     cached_len: Cell<usize>,

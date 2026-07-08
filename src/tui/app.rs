@@ -1,4 +1,5 @@
 use crate::config::models::Server;
+use super::sftp_browser::SftpState;
 
 #[derive(Debug, PartialEq)]
 pub enum InputMode {
@@ -24,6 +25,7 @@ pub struct App {
     pub input_mode: InputMode,
     pub input: String,
     pub should_quit: bool,
+    pub sftp_state: Option<SftpState>,
 }
 
 impl App {
@@ -37,6 +39,7 @@ impl App {
             input_mode: InputMode::Normal,
             input: String::new(),
             should_quit: false,
+            sftp_state: None,
         }
     }
 
@@ -84,6 +87,16 @@ impl App {
                 .collect();
         }
         self.selected = 0;
+    }
+
+    pub fn open_sftp(&mut self) {
+        self.current_view = CurrentView::SftpBrowser;
+        self.sftp_state = Some(SftpState::new());
+    }
+
+    pub fn close_sftp(&mut self) {
+        self.current_view = CurrentView::ServerList;
+        self.sftp_state = None;
     }
 }
 

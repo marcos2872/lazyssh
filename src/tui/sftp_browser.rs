@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::sftp::{LocalFs, RemoteFs};
 
+#[derive(Debug)]
 pub struct SftpState {
     pub local: LocalFs,
     pub remote: RemoteFs,

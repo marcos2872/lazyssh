@@ -16,7 +16,7 @@ use ratatui::{
 };
 use std::io;
 
-use tui::{render_server_list, App};
+use tui::{render_server_list, render_sftp_browser, App};
 
 struct CleanupGuard;
 
@@ -29,7 +29,6 @@ impl Drop for CleanupGuard {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -37,15 +36,18 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
     let _guard = CleanupGuard;
 
-    // Load config
     let config = config::load_or_default();
     let mut app = App::new(config.servers);
 
-    // Main loop
     loop {
         terminal.draw(|f| {
             match app.current_view {
                 tui::app::CurrentView::ServerList => render_server_list(f, &app),
+                tui::app::CurrentView::SftpBrowser => {
+                    if let Some(sftp) = &app.sftp_state {
+                        render_sftp_browser(f, sftp);
+                    }
+                }
                 _ => {}
             }
         })?;
@@ -53,42 +55,67 @@ async fn main() -> Result<()> {
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match app.input_mode {
-                        tui::app::InputMode::Normal => match key.code {
-                            KeyCode::Char('q') => app.should_quit = true,
-                            KeyCode::Char('j') | KeyCode::Down => app.next(),
-                            KeyCode::Char('k') | KeyCode::Up => app.previous(),
-                            KeyCode::Char('/') => {
-                                app.input_mode = tui::app::InputMode::Search;
-                                app.input.clear();
+                    match app.current_view {
+                        tui::app::CurrentView::ServerList => {
+                            match app.input_mode {
+                                tui::app::InputMode::Normal => match key.code {
+                                    KeyCode::Char('q') => app.should_quit = true,
+                                    KeyCode::Char('j') | KeyCode::Down => app.next(),
+                                    KeyCode::Char('k') | KeyCode::Up => app.previous(),
+                                    KeyCode::Char('/') => {
+                                        app.input_mode = tui::app::InputMode::Search;
+                                        app.input.clear();
+                                    }
+                                    KeyCode::Char('s') => app.open_sftp(),
+                                    KeyCode::Enter => {
+                                        if let Some(_server) = app.selected_server() {
+                                            // TODO: Open SSH terminal view
+                                            app.should_quit = true;
+                                        }
+                                    }
+                                    _ => {}
+                                },
+                                tui::app::InputMode::Search => match key.code {
+                                    KeyCode::Enter => app.input_mode = tui::app::InputMode::Normal,
+                                    KeyCode::Esc => {
+                                        app.input_mode = tui::app::InputMode::Normal;
+                                        app.input.clear();
+                                        app.filter("");
+                                    }
+                                    KeyCode::Char(c) => {
+                                        app.input.push(c);
+                                        app.filter(&app.input.clone());
+                                    }
+                                    KeyCode::Backspace => {
+                                        app.input.pop();
+                                        app.filter(&app.input.clone());
+                                    }
+                                    _ => {}
+                                },
+                                _ => {}
                             }
-                            KeyCode::Enter => {
-                                if let Some(_server) = app.selected_server() {
-                                    // TODO: Open SSH terminal view
-                                    app.should_quit = true;
+                        }
+                        tui::app::CurrentView::SftpBrowser => {
+                            match key.code {
+                                KeyCode::Char('q') | KeyCode::Esc => app.close_sftp(),
+                                KeyCode::Tab => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        sftp.toggle_focus();
+                                    }
                                 }
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        sftp.next_item();
+                                    }
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        sftp.previous_item();
+                                    }
+                                }
+                                _ => {}
                             }
-                            _ => {}
-                        },
-                        tui::app::InputMode::Search => match key.code {
-                            KeyCode::Enter => {
-                                app.input_mode = tui::app::InputMode::Normal;
-                            }
-                            KeyCode::Esc => {
-                                app.input_mode = tui::app::InputMode::Normal;
-                                app.input.clear();
-                                app.filter("");
-                            }
-                            KeyCode::Char(c) => {
-                                app.input.push(c);
-                                app.filter(&app.input.clone());
-                            }
-                            KeyCode::Backspace => {
-                                app.input.pop();
-                                app.filter(&app.input.clone());
-                            }
-                            _ => {}
-                        },
+                        }
                         _ => {}
                     }
                 }
