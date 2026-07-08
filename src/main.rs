@@ -6,12 +6,13 @@ pub mod vault;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEvent, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
+    layout::Rect,
     Terminal,
 };
 use std::io;
@@ -505,7 +506,7 @@ async fn main() -> Result<()> {
                 }
                 }
 
-                // Tratar eventos do mouse (scroll)
+                // Tratar eventos do mouse (scroll e cliques)
                 Event::Mouse(mouse) => {
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
@@ -532,6 +533,45 @@ async fn main() -> Result<()> {
                                 }
                             } else {
                                 app.next();
+                            }
+                        }
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            // Clique na lista de servidores
+                            if matches!(app.current_view, tui::app::CurrentView::ServerList)
+                                && app.insert_state.is_none()
+                                && app.edit_state.is_none()
+                            {
+                                let list_area = Rect::new(0, 3, 200, 100); // Área aproximada da lista
+                                if mouse.column >= list_area.x
+                                    && mouse.column < list_area.x + list_area.width
+                                    && mouse.row >= list_area.y + 1
+                                    && mouse.row < list_area.y + 1 + app.servers.len() as u16
+                                {
+                                    let clicked_index = (mouse.row - list_area.y - 1) as usize;
+                                    if clicked_index < app.filtered_indices.len() {
+                                        app.selected = clicked_index;
+                                    }
+                                }
+                            }
+                            // Duplo clique para conectar
+                            if matches!(app.current_view, tui::app::CurrentView::ServerList)
+                                && app.insert_state.is_none()
+                                && app.edit_state.is_none()
+                            {
+                                if let Some(_server) = app.selected_server() {
+                                    // Verificar se clicou na mesma linha do servidor selecionado
+                                    let list_area = Rect::new(0, 3, 200, 100);
+                                    if mouse.column >= list_area.x
+                                        && mouse.column < list_area.x + list_area.width
+                                        && mouse.row >= list_area.y + 1
+                                        && mouse.row < list_area.y + 1 + app.servers.len() as u16
+                                    {
+                                        let clicked_index = (mouse.row - list_area.y - 1) as usize;
+                                        if clicked_index == app.selected {
+                                            app.connect_ssh();
+                                        }
+                                    }
+                                }
                             }
                         }
                         _ => {}
