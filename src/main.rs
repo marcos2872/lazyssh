@@ -539,11 +539,14 @@ async fn main() -> Result<()> {
                             // Iniciar seleção no terminal SSH
                             if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
                                 if let Some(ssh) = &mut app.ssh_state {
-                                    // Calcular linha relativa ao output
-                                    let row = mouse.row as usize;
-                                    let col = mouse.column as usize;
-                                    if row > 0 && row <= ssh.output.len() {
-                                        ssh.start_selection(row - 1, col);
+                                    // Coordenadas do mouse são absolutas na tela
+                                    // Borda superior = row 1, borda esquerda = col 1
+                                    let row = mouse.row.saturating_sub(1) as usize; // -1 para borda
+                                    let col = mouse.column.saturating_sub(1) as usize; // -1 para borda
+                                    let total_lines = ssh.output.len();
+
+                                    if total_lines > 0 && row < total_lines {
+                                        ssh.start_selection(row, col);
                                     }
                                 }
                             }
@@ -552,6 +555,7 @@ async fn main() -> Result<()> {
                                 && app.insert_state.is_none()
                                 && app.edit_state.is_none()
                             {
+                                // Borda + barra de busca = row 4 para conteúdo
                                 if mouse.row >= 4 {
                                     let clicked_index = (mouse.row - 4) as usize;
                                     if clicked_index < app.filtered_indices.len() {
@@ -564,10 +568,12 @@ async fn main() -> Result<()> {
                             // Atualizar seleção no terminal SSH
                             if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
                                 if let Some(ssh) = &mut app.ssh_state {
-                                    let row = mouse.row as usize;
-                                    let col = mouse.column as usize;
-                                    if row > 0 && row <= ssh.output.len() {
-                                        ssh.update_selection(row - 1, col);
+                                    let row = mouse.row.saturating_sub(1) as usize;
+                                    let col = mouse.column.saturating_sub(1) as usize;
+                                    let total_lines = ssh.output.len();
+
+                                    if total_lines > 0 && row < total_lines {
+                                        ssh.update_selection(row, col);
                                     }
                                 }
                             }
@@ -579,7 +585,7 @@ async fn main() -> Result<()> {
                                     ssh.end_selection();
                                     if ssh.selection.is_some() {
                                         if ssh.copy_selection_to_clipboard() {
-                                            app.notifications.success("Texto copiado para área de transferência!");
+                                            app.notifications.success("Texto copiado!");
                                         }
                                     }
                                 }

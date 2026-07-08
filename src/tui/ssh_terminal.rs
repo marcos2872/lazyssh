@@ -211,6 +211,7 @@ impl SshTerminalState {
 
     pub fn is_selected(&self, row: usize, col: usize) -> bool {
         if let Some(sel) = &self.selection {
+            // A row aqui é relativa ao output, não à tela
             let start_row = sel.start_row.min(sel.end_row);
             let end_row = sel.start_row.max(sel.end_row);
 
@@ -225,11 +226,11 @@ impl SshTerminalState {
             };
 
             if row == start_row && row == end_row {
-                col >= start_col && col < end_col
+                col >= start_col && col <= end_col
             } else if row == start_row {
                 col >= start_col
             } else if row == end_row {
-                col < end_col
+                col <= end_col
             } else {
                 true
             }
@@ -289,6 +290,7 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         let mut spans = vec![];
 
         // Renderizar caractere por caractere para suportar seleção
+        // i é o índice absoluto no output, usado para verificar seleção
         for (col, &ch) in line_chars.iter().enumerate() {
             let is_selected = state.is_selected(i, col);
             let style = if is_selected {
@@ -299,9 +301,9 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
             spans.push(Span::styled(ch.to_string(), style));
         }
 
-        // Se a linha for menor que a largura da tela, preencher com espaços selecionados
+        // Se a linha for vazia, adicionar algo para poder selecionar
         if line_chars.is_empty() {
-            spans.push(Span::raw(""));
+            spans.push(Span::raw(" "));
         }
 
         output_lines.push(Line::from(spans));
