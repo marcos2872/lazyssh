@@ -16,7 +16,7 @@ use ratatui::{
 };
 use std::io;
 
-use tui::{render_server_list, render_sftp_browser, App};
+use tui::{render_server_list, render_sftp_browser, render_ssh_terminal, App};
 
 struct CleanupGuard;
 
@@ -133,6 +133,11 @@ async fn main() -> Result<()> {
                         render_sftp_browser(f, sftp);
                     }
                 }
+                tui::app::CurrentView::SshTerminal => {
+                    if let Some(ssh) = &app.ssh_state {
+                        render_ssh_terminal(f, ssh);
+                    }
+                }
                 _ => {}
             }
         })?;
@@ -181,8 +186,7 @@ async fn main() -> Result<()> {
                                     KeyCode::Char('s') => app.open_sftp(),
                                     KeyCode::Enter => {
                                         if let Some(_server) = app.selected_server() {
-                                            // TODO: Open SSH terminal view
-                                            app.should_quit = true;
+                                            app.connect_ssh();
                                         }
                                     }
                                     _ => {}
@@ -332,6 +336,31 @@ async fn main() -> Result<()> {
                                     if let Some(sftp) = &mut app.sftp_state {
                                         let _ = sftp.local.cd("..");
                                         sftp.local_selected = 0;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        tui::app::CurrentView::SshTerminal => {
+                            match key.code {
+                                KeyCode::Char('q') | KeyCode::Esc => app.close_ssh(),
+                                KeyCode::Char(c) => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        ssh.input.push(c);
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        ssh.input.pop();
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        let cmd = ssh.input.clone();
+                                        ssh.output.push(format!("> {}", cmd));
+                                        ssh.output
+                                            .push("(comando não executado - demo)".to_string());
+                                        ssh.input.clear();
                                     }
                                 }
                                 _ => {}

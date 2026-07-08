@@ -2,6 +2,7 @@ use crate::config::models::Server;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use super::sftp_browser::SftpState;
+use super::ssh_terminal::SshTerminalState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EditField {
@@ -160,6 +161,7 @@ pub struct App {
     pub input: String,
     pub should_quit: bool,
     pub sftp_state: Option<SftpState>,
+    pub ssh_state: Option<SshTerminalState>,
     pub insert_state: Option<InsertState>,
     pub edit_state: Option<EditState>,
 }
@@ -176,6 +178,7 @@ impl App {
             input: String::new(),
             should_quit: false,
             sftp_state: None,
+            ssh_state: None,
             insert_state: None,
             edit_state: None,
         }
@@ -237,6 +240,21 @@ impl App {
     pub fn close_sftp(&mut self) {
         self.current_view = CurrentView::ServerList;
         self.sftp_state = None;
+    }
+
+    pub fn connect_ssh(&mut self) {
+        let server_name = self
+            .selected_server()
+            .map(|s| s.name.clone());
+        if let Some(name) = server_name {
+            self.current_view = CurrentView::SshTerminal;
+            self.ssh_state = Some(SshTerminalState::new(name));
+        }
+    }
+
+    pub fn close_ssh(&mut self) {
+        self.current_view = CurrentView::ServerList;
+        self.ssh_state = None;
     }
 }
 
