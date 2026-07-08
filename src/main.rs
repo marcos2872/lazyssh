@@ -58,6 +58,20 @@ async fn main() -> Result<()> {
                             3,
                         );
                         f.render_widget(input, rect);
+                    } else if app.input_mode == tui::app::InputMode::Edit {
+                        let area = f.area();
+                        let popup = ratatui::widgets::Block::default()
+                            .borders(ratatui::widgets::Borders::ALL)
+                            .title("Editar Nome");
+                        let input = ratatui::widgets::Paragraph::new(app.input.as_str())
+                            .block(popup);
+                        let rect = ratatui::layout::Rect::new(
+                            area.width / 4,
+                            area.height / 2 - 2,
+                            area.width / 2,
+                            3,
+                        );
+                        f.render_widget(input, rect);
                     }
                 }
                 tui::app::CurrentView::SftpBrowser => {
@@ -86,6 +100,12 @@ async fn main() -> Result<()> {
                                     KeyCode::Char('a') => {
                                         app.input_mode = tui::app::InputMode::Insert;
                                         app.input.clear();
+                                    }
+                                    KeyCode::Char('e') => {
+                                        if let Some(server) = app.selected_server() {
+                                            app.input = server.name.clone();
+                                            app.input_mode = tui::app::InputMode::Edit;
+                                        }
                                     }
                                     KeyCode::Char('p') => {
                                         if let Some(server) = app.selected_server_mut() {
@@ -150,6 +170,33 @@ async fn main() -> Result<()> {
                                     }
                                     _ => {}
                                 },
+                                tui::app::InputMode::Edit => match key.code {
+                                    KeyCode::Esc => {
+                                        app.input_mode = tui::app::InputMode::Normal;
+                                        app.input.clear();
+                                    }
+                                    KeyCode::Char(c) => {
+                                        app.input.push(c);
+                                    }
+                                    KeyCode::Backspace => {
+                                        app.input.pop();
+                                    }
+                                    KeyCode::Enter => {
+                                        let new_name = app.input.clone();
+                                        if !new_name.is_empty() {
+                                            if let Some(server) = app.selected_server_mut() {
+                                                server.name = new_name;
+                                                let _ = config::save_config(
+                                                    &config::AppConfig { servers: app.servers.clone() },
+                                                    &config::get_config_path(),
+                                                );
+                                            }
+                                        }
+                                        app.input_mode = tui::app::InputMode::Normal;
+                                        app.input.clear();
+                                    }
+                                    _ => {}
+                                },
                                 tui::app::InputMode::Search => match key.code {
                                     KeyCode::Enter => app.input_mode = tui::app::InputMode::Normal,
                                     KeyCode::Esc => {
@@ -166,8 +213,7 @@ async fn main() -> Result<()> {
                                         app.filter(&app.input.clone());
                                     }
                                     _ => {}
-                                },
-                                _ => {}
+                                }
                             }
                         }
                         tui::app::CurrentView::SftpBrowser => {
