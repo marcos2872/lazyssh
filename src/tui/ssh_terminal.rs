@@ -21,6 +21,7 @@ pub struct SshTerminalState {
     pub server: Option<Server>,
     pub output: Vec<String>,
     pub input: String,
+    pub cursor_pos: usize,
     pub status: SshStatus,
     pub session_id: Option<String>,
 }
@@ -33,6 +34,7 @@ impl SshTerminalState {
             server: Some(server),
             output: vec![],
             input: String::new(),
+            cursor_pos: 0,
             status: SshStatus::Connecting,
             session_id: None,
         }
@@ -56,7 +58,50 @@ impl SshTerminalState {
         self.status = SshStatus::Disconnected;
     }
 
-    fn prompt(&self) -> String {
+    pub fn insert_char(&mut self, c: char) {
+        self.input.insert(self.cursor_pos, c);
+        self.cursor_pos += 1;
+    }
+
+    pub fn delete_char_backward(&mut self) {
+        if self.cursor_pos > 0 {
+            self.cursor_pos -= 1;
+            self.input.remove(self.cursor_pos);
+        }
+    }
+
+    pub fn delete_char_forward(&mut self) {
+        if self.cursor_pos < self.input.len() {
+            self.input.remove(self.cursor_pos);
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor_pos > 0 {
+            self.cursor_pos -= 1;
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor_pos < self.input.len() {
+            self.cursor_pos += 1;
+        }
+    }
+
+    pub fn move_cursor_home(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    pub fn move_cursor_end(&mut self) {
+        self.cursor_pos = self.input.len();
+    }
+
+    pub fn clear_input(&mut self) {
+        self.input.clear();
+        self.cursor_pos = 0;
+    }
+
+    pub fn prompt(&self) -> String {
         if let Some(server) = &self.server {
             format!("{}@{}:~$ ", server.user, server.host)
         } else {
@@ -96,11 +141,38 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         SshStatus::Connected => {
             let prompt = state.prompt();
             let prompt_str = prompt.clone();
-            lines.push(Line::from(vec![
+
+            // Texto antes do cursor
+            let before_cursor = &state.input[..state.cursor_pos];
+            // Texto depois do cursor (se houver)
+            let after_cursor = &state.input[state.cursor_pos..];
+
+            let mut spans = vec![
                 Span::styled(prompt_str, Style::default().fg(Color::Green)),
-                Span::styled(&state.input, Style::default().fg(Color::White)),
-                Span::styled("█", Style::default().fg(Color::Green)),
-            ]));
+                Span::styled(before_cursor.to_string(), Style::default().fg(Color::White)),
+            ];
+
+            // Se cursor está no meio, mostra caractere sob cursor + resto
+            if !after_cursor.is_empty() {
+                let mut chars = after_cursor.chars();
+                if let Some(cursor_char) = chars.next() {
+                    // Caractere sob o cursor (invertido)
+                    spans.push(Span::styled(
+                        cursor_char.to_string(),
+                        Style::default().fg(Color::Black).bg(Color::Green),
+                    ));
+                    // Resto do texto
+                    let remaining: String = chars.collect();
+                    if !remaining.is_empty() {
+                        spans.push(Span::styled(remaining, Style::default().fg(Color::White)));
+                    }
+                }
+            } else {
+                // Cursor no final - mostra bloco
+                spans.push(Span::styled("█", Style::default().fg(Color::Green)));
+            }
+
+            lines.push(Line::from(spans));
         }
         SshStatus::Connecting => {
             lines.push(Line::from(Span::styled(

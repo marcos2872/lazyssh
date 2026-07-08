@@ -404,14 +404,49 @@ async fn main() -> Result<()> {
                                 KeyCode::Char(c) => {
                                     if let Some(ssh) = &mut app.ssh_state {
                                         if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.input.push(c);
+                                            ssh.insert_char(c);
                                         }
                                     }
                                 }
                                 KeyCode::Backspace => {
                                     if let Some(ssh) = &mut app.ssh_state {
                                         if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.input.pop();
+                                            ssh.delete_char_backward();
+                                        }
+                                    }
+                                }
+                                KeyCode::Delete => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.delete_char_forward();
+                                        }
+                                    }
+                                }
+                                KeyCode::Left => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.move_cursor_left();
+                                        }
+                                    }
+                                }
+                                KeyCode::Right => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.move_cursor_right();
+                                        }
+                                    }
+                                }
+                                KeyCode::Home => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.move_cursor_home();
+                                        }
+                                    }
+                                }
+                                KeyCode::End => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                            ssh.move_cursor_end();
                                         }
                                     }
                                 }
@@ -419,7 +454,7 @@ async fn main() -> Result<()> {
                                     if let Some(ssh) = &mut app.ssh_state {
                                         if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
                                             let cmd = ssh.input.clone();
-                                            ssh.output.push(format!("> {}", cmd));
+                                            ssh.output.push(format!("{}{}", ssh.prompt(), cmd));
 
                                             if cmd.trim() == "exit" || cmd.trim() == "quit" {
                                                 ssh.set_disconnected();
@@ -443,7 +478,7 @@ async fn main() -> Result<()> {
                                                     }
                                                 }
                                             }
-                                            ssh.input.clear();
+                                            ssh.clear_input();
                                         }
                                     }
                                 }
