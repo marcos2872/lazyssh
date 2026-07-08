@@ -1,5 +1,4 @@
 use ratatui::{
-    layout::{Constraint, Layout},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -32,7 +31,7 @@ impl SshTerminalState {
         Self {
             server_name: name,
             server: Some(server),
-            output: vec!["Conectando...".to_string()],
+            output: vec![],
             input: String::new(),
             status: SshStatus::Connecting,
             session_id: None,
@@ -46,8 +45,6 @@ impl SshTerminalState {
     pub fn set_connected(&mut self, session_id: String) {
         self.status = SshStatus::Connected;
         self.session_id = Some(session_id);
-        self.output.push("Conectado com sucesso!".to_string());
-        self.output.push("Digite comandos ou 'exit' para desconectar.".to_string());
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -57,17 +54,21 @@ impl SshTerminalState {
 
     pub fn set_disconnected(&mut self) {
         self.status = SshStatus::Disconnected;
-        self.output.push("Desconectado.".to_string());
+    }
+
+    fn prompt(&self) -> String {
+        if let Some(server) = &self.server {
+            format!("{}@{}:~$ ", server.user, server.host)
+        } else {
+            "$ ".to_string()
+        }
     }
 }
 
 pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
-    let chunks = Layout::default()
-        .direction(ratatui::layout::Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)])
-        .split(f.area());
+    let area = f.area();
 
-    // Status bar
+    // Status bar no topo
     let status_color = match &state.status {
         SshStatus::Connecting => Color::Yellow,
         SshStatus::Connected => Color::Green,
@@ -78,28 +79,53 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
     let status_text = match &state.status {
         SshStatus::Connecting => "Conectando...",
         SshStatus::Connected => "Conectado",
-        SshStatus::Error(e) => e,
+        SshStatus::Error(e) => e.as_str(),
         SshStatus::Disconnected => "Desconectado",
     };
 
-    let output_text: Vec<Line> = state
-        .output
-        .iter()
-        .map(|line| Line::from(Span::raw(line)))
-        .collect();
+    // Construir todas as linhas do terminal
+    let mut lines: Vec<Line> = vec![];
 
-    let output = Paragraph::new(output_text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!("SSH: {} [{}]", state.server_name, status_text))
-            .title_style(Style::default().fg(status_color)),
-    );
-    f.render_widget(output, chunks[0]);
+    // Adicionar output existente
+    for line in &state.output {
+        lines.push(Line::from(Span::raw(line)));
+    }
 
-    let input = Paragraph::new(state.input.as_str()).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Comando"),
-    );
-    f.render_widget(input, chunks[1]);
+    // Adicionar linha de comando atual (prompt + input)
+    match &state.status {
+        SshStatus::Connected => {
+            let prompt = state.prompt();
+            let prompt_str = prompt.clone();
+            lines.push(Line::from(vec![
+                Span::styled(prompt_str, Style::default().fg(Color::Green)),
+                Span::styled(&state.input, Style::default().fg(Color::White)),
+            ]));
+        }
+        SshStatus::Connecting => {
+            lines.push(Line::from(Span::styled(
+                "Conectando...",
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        SshStatus::Error(_) => {
+            lines.push(Line::from(Span::styled(
+                "Pressione 'q' ou Esc para voltar",
+                Style::default().fg(Color::Red),
+            )));
+        }
+        SshStatus::Disconnected => {
+            lines.push(Line::from(Span::styled(
+                "Desconectado. Pressione 'q' para voltar.",
+                Style::default().fg(Color::Gray),
+            )));
+        }
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} [{}] ", state.server_name, status_text))
+        .title_style(Style::default().fg(status_color));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, area);
 }
