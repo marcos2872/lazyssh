@@ -1,0 +1,101 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::Result;
+use russh::client::Handler;
+use russh::keys::*;
+use russh::*;
+
+use crate::config::models::{Auth, Server};
+
+struct SshClient;
+
+impl Handler for SshClient {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _server_public_key: &ssh_key::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
+
+pub struct SshSession {
+    session: client::Handle<SshClient>,
+}
+
+impl SshSession {
+    pub async fn connect(server: &Server, auth: &Auth) -> Result<Self> {
+        let config = client::Config {
+            inactivity_timeout: Some(Duration::from_secs(5)),
+            ..Default::default()
+        };
+
+        let config = Arc::new(config);
+        let sh = SshClient;
+
+        let mut session =
+            client::connect(config, (server.host.as_str(), server.port), sh).await?;
+
+        match auth {
+            Auth::Key { .. } => {
+                let key_with_hash = super::auth::load_key(auth)?;
+                let auth_res = session
+                    .authenticate_publickey(&server.user, key_with_hash)
+                    .await?;
+
+                if !auth_res.success() {
+                    anyhow::bail!("Public key authentication failed");
+                }
+            }
+            Auth::Password { .. } => {
+                // TODO: decrypt from vault and authenticate
+                let auth_res = session
+                    .authenticate_password(&server.user, "placeholder")
+                    .await?;
+
+                if !auth_res.success() {
+                    anyhow::bail!("Password authentication failed");
+                }
+            }
+        }
+
+        Ok(Self { session })
+    }
+
+    pub async fn execute(&self, command: &str) -> Result<String> {
+        let mut channel = self.session.channel_open_session().await?;
+        channel.exec(true, command).await?;
+
+        let mut output = String::new();
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => {
+                    output.push_str(&String::from_utf8_lossy(&data));
+                }
+                ChannelMsg::ExitStatus { .. } => break,
+                _ => {}
+            }
+        }
+
+        Ok(output)
+    }
+
+    pub async fn shell(&self) -> Result<()> {
+        let channel = self.session.channel_open_session().await?;
+        channel.request_shell(true).await?;
+
+        // Interactive shell handling would go here
+        // For now, this is a placeholder
+
+        Ok(())
+    }
+
+    pub async fn close(&mut self) -> Result<()> {
+        self.session
+            .disconnect(Disconnect::ByApplication, "", "English")
+            .await?;
+        Ok(())
+    }
+}

@@ -1,3 +1,7 @@
+pub mod config;
+pub mod ssh;
+pub mod vault;
+
 use anyhow::Result;
 
 #[tokio::main]
