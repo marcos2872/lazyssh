@@ -17,6 +17,9 @@ impl Handler for SshClient {
         &mut self,
         _server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
+        // TODO: Implement known_hosts verification before production use
+        // For now, warn and accept (MITM vulnerable)
+        eprintln!("WARNING: Host key verification not implemented - vulnerable to MITM attacks");
         Ok(true)
     }
 }
@@ -49,15 +52,8 @@ impl SshSession {
                     anyhow::bail!("Public key authentication failed");
                 }
             }
-            Auth::Password { .. } => {
-                // TODO: decrypt from vault and authenticate
-                let auth_res = session
-                    .authenticate_password(&server.user, "placeholder")
-                    .await?;
-
-                if !auth_res.success() {
-                    anyhow::bail!("Password authentication failed");
-                }
+            Auth::Password { vault_key: _ } => {
+                return Err(anyhow::anyhow!("Password authentication not yet implemented - use key auth"));
             }
         }
 
@@ -83,13 +79,7 @@ impl SshSession {
     }
 
     pub async fn shell(&self) -> Result<()> {
-        let channel = self.session.channel_open_session().await?;
-        channel.request_shell(true).await?;
-
-        // Interactive shell handling would go here
-        // For now, this is a placeholder
-
-        Ok(())
+        todo!("Interactive shell not yet implemented - will be added in Task 9")
     }
 
     pub async fn close(&mut self) -> Result<()> {
