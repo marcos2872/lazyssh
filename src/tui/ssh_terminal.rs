@@ -22,6 +22,7 @@ pub struct SshTerminalState {
     pub output: Vec<String>,
     pub input: String,
     pub cursor_pos: usize,
+    pub scroll_offset: usize,
     pub status: SshStatus,
     pub session_id: Option<String>,
 }
@@ -35,6 +36,7 @@ impl SshTerminalState {
             output: vec![],
             input: String::new(),
             cursor_pos: 0,
+            scroll_offset: 0,
             status: SshStatus::Connecting,
             session_id: None,
         }
@@ -101,6 +103,27 @@ impl SshTerminalState {
         self.cursor_pos = 0;
     }
 
+    pub fn scroll_up(&mut self, lines: usize) {
+        let max_scroll = self.output.len().saturating_sub(1);
+        self.scroll_offset = (self.scroll_offset + lines).min(max_scroll);
+    }
+
+    pub fn scroll_down(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    pub fn scroll_page_up(&mut self, page_size: usize) {
+        self.scroll_up(page_size);
+    }
+
+    pub fn scroll_page_down(&mut self, page_size: usize) {
+        self.scroll_down(page_size);
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = 0;
+    }
+
     pub fn prompt(&self) -> String {
         if let Some(server) = &self.server {
             format!("{}@{}:~$ ", server.user, server.host)
@@ -131,9 +154,19 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
     // Construir todas as linhas do terminal
     let mut lines: Vec<Line> = vec![];
 
-    // Adicionar output existente
-    for line in &state.output {
-        lines.push(Line::from(Span::raw(line)));
+    // Calcular quantas linhas cabem na tela (área útil - bordas - 1 para prompt)
+    let visible_height = area.height.saturating_sub(2) as usize; // -2 para bordas
+
+    // Adicionar output existente com scroll
+    let total_lines = state.output.len();
+    let start_idx = if total_lines > visible_height {
+        total_lines.saturating_sub(visible_height + state.scroll_offset)
+    } else {
+        0
+    };
+
+    for i in start_idx..total_lines {
+        lines.push(Line::from(Span::raw(&state.output[i])));
     }
 
     // Adicionar linha de comando atual (prompt + input)
@@ -194,9 +227,19 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         }
     }
 
+    // Indicador de scroll
+    let scroll_indicator = if state.scroll_offset > 0 {
+        format!(" [↑{}]", state.scroll_offset)
+    } else {
+        String::new()
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" {} [{}] ", state.server_name, status_text))
+        .title(format!(
+            " {} [{}]{} ",
+            state.server_name, status_text, scroll_indicator
+        ))
         .title_style(Style::default().fg(status_color));
 
     let paragraph = Paragraph::new(lines).block(block);

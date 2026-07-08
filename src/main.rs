@@ -450,6 +450,16 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
+                                KeyCode::PageUp => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        ssh.scroll_page_up(10);
+                                    }
+                                }
+                                KeyCode::PageDown => {
+                                    if let Some(ssh) = &mut app.ssh_state {
+                                        ssh.scroll_page_down(10);
+                                    }
+                                }
                                 KeyCode::Enter => {
                                     if let Some(ssh) = &mut app.ssh_state {
                                         if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
@@ -480,6 +490,7 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                             ssh.clear_input();
+                                            ssh.scroll_to_bottom();
                                         }
                                     }
                                 }
