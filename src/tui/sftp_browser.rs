@@ -46,6 +46,7 @@ pub struct SftpState {
     pub status: String,
     pub transfer_progress: Option<TransferProgress>,
     pub is_transferring: bool,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,6 +76,7 @@ impl SftpState {
             status: "Conectado".to_string(),
             transfer_progress: None,
             is_transferring: false,
+            session_id: None,
         }
     }
 

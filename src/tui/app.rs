@@ -1,5 +1,6 @@
 use crate::config::models::{Auth, Server};
-use crate::ssh::execute_ssh_command;
+use crate::ssh::{execute_ssh_command, SshService};
+use crate::sftp::SftpService;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use super::effects::AppEffects;
@@ -330,6 +331,8 @@ pub struct App {
     pub edit_state: Option<EditState>,
     pub notifications: NotificationQueue,
     pub effects: AppEffects,
+    pub ssh_service: SshService,
+    pub sftp_service: SftpService,
 }
 
 impl App {
@@ -355,6 +358,8 @@ impl App {
             edit_state: None,
             notifications,
             effects: AppEffects::new(),
+            ssh_service: SshService::new(),
+            sftp_service: SftpService::new(),
         }
     }
 
@@ -416,13 +421,43 @@ impl App {
     pub fn open_sftp(&mut self) {
         if let Some(server) = self.selected_server() {
             let server = server.clone();
-            self.current_view = CurrentView::SftpBrowser;
-            self.sftp_state = Some(SftpState::new(server));
-            self.notifications.info("SFTP conectado!");
+
+            // Connect using SftpService (async via block_in_place)
+            let result = {
+                let sftp_service = &mut self.sftp_service;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(sftp_service.connect(&server))
+                })
+            };
+
+            match result {
+                Ok(session_id) => {
+                    self.current_view = CurrentView::SftpBrowser;
+                    let mut state = SftpState::new(server);
+                    state.session_id = Some(session_id);
+                    self.sftp_state = Some(state);
+                    self.notifications.info("SFTP conectado!");
+                }
+                Err(e) => {
+                    self.notifications
+                        .error(&format!("Falha ao conectar SFTP: {}", e));
+                }
+            }
         }
     }
 
     pub fn close_sftp(&mut self) {
+        // Disconnect SFTP session from service
+        if let Some(sftp) = &self.sftp_state {
+            if let Some(ref session_id) = sftp.session_id {
+                let sftp_service = &mut self.sftp_service;
+                let _ = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(sftp_service.disconnect(session_id))
+                });
+            }
+        }
         self.current_view = CurrentView::ServerList;
         self.sftp_state = None;
     }
@@ -430,27 +465,46 @@ impl App {
     pub fn connect_ssh(&mut self) {
         if let Some(server) = self.selected_server() {
             let server = server.clone();
-            self.notifications.info(&format!("Conectando a {}...", server.name));
+            self.notifications
+                .info(&format!("Conectando a {}...", server.name));
             self.current_view = CurrentView::SshTerminal;
 
             let mut state = SshTerminalState::new(server.clone());
             state.output.clear();
 
-            // Testar conexão com um comando simples
-            let test_output = execute_ssh_command(&server, "echo 'Conexao OK'");
+            // Connect using SshService (async via block_in_place)
+            let result = {
+                let ssh_service = &mut self.ssh_service;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(ssh_service.connect(&server))
+                })
+            };
 
-            match test_output {
-                Ok(output) => {
-                    let session_id = format!("{}@{}", server.user, server.host);
-                    state.set_connected(session_id);
-                    if !output.trim().is_empty() {
-                        state.add_output(output.trim().to_string());
+            match result {
+                Ok(session_id) => {
+                    // Test connection with a simple command
+                    let test_output = execute_ssh_command(&server, "echo 'Conexao OK'");
+                    match test_output {
+                        Ok(output) => {
+                            state.set_connected(session_id);
+                            if !output.trim().is_empty() {
+                                state.add_output(output.trim().to_string());
+                            }
+                            self.notifications
+                                .success(&format!("Conectado a {}!", server.name));
+                        }
+                        Err(e) => {
+                            state.set_error(e.clone());
+                            self.notifications
+                                .error(&format!("Falha ao conectar: {}", e));
+                        }
                     }
-                    self.notifications.success(&format!("Conectado a {}!", server.name));
                 }
                 Err(e) => {
-                    state.set_error(e.clone());
-                    self.notifications.error(&format!("Falha ao conectar: {}", e));
+                    state.set_error(e.to_string());
+                    self.notifications
+                        .error(&format!("Falha ao conectar: {}", e));
                 }
             }
 
@@ -459,6 +513,16 @@ impl App {
     }
 
     pub fn close_ssh(&mut self) {
+        // Disconnect SSH session from service
+        if let Some(ssh) = &self.ssh_state {
+            if let Some(ref session_id) = ssh.session_id {
+                let ssh_service = &mut self.ssh_service;
+                let _ = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(ssh_service.disconnect(session_id))
+                });
+            }
+        }
         self.current_view = CurrentView::ServerList;
         self.ssh_state = None;
     }
