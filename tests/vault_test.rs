@@ -23,3 +23,13 @@ fn test_different_keys_fail() {
     
     assert!(result.is_err());
 }
+
+#[test]
+fn test_tampered_ciphertext_fails() {
+    let key = derive_key("password", &[0u8; 16]);
+    let encrypted = encrypt_password("secret", &key).unwrap();
+    let mut tampered = encrypted.clone();
+    tampered[16] ^= 0xff; // Flip a bit in ciphertext
+    let result = decrypt_password(&tampered, &key);
+    assert!(result.is_err());
+}

@@ -3,7 +3,13 @@ use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, NONCE_LEN};
 use ring::rand::{SecureRandom, SystemRandom};
 use std::num::NonZeroU32;
 
-const ITERATIONS: NonZeroU32 = unsafe { NonZeroU32::new_unchecked(100_000) };
+const ITERATIONS: NonZeroU32 = NonZeroU32::new(100_000).unwrap();
+
+pub fn generate_salt() -> [u8; 16] {
+    let mut salt = [0u8; 16];
+    SystemRandom::new().fill(&mut salt).expect("salt generation");
+    salt
+}
 
 pub fn derive_key(master_password: &str, salt: &[u8; 16]) -> [u8; 32] {
     let mut key = [0u8; 32];
