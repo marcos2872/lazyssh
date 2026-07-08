@@ -99,31 +99,54 @@ impl RemoteFs {
             format!("{}/{}", self.current_dir, remote_path)
         };
 
-        // Usar SCP para upload
         use std::process::Command;
 
         let user_host = format!("{}@{}", server.user, server.host);
         let remote_target = format!("{}:{}", user_host, full_remote);
         let port_str = server.port.to_string();
 
-        let mut args = vec![
-            "-o", "StrictHostKeyChecking=no",
-            "-P", &port_str,
-        ];
+        // Verificar se temos sshpass para autenticação por senha
+        let has_sshpass = Command::new("which")
+            .arg("sshpass")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
-        // Adicionar chave se existir
-        if let crate::config::models::Auth::Key { path, .. } = &server.auth {
-            args.push("-i");
-            args.push(path);
-        }
+        // Determinar programa e argumentos
+        let (program, mut args) = match &server.auth {
+            crate::config::models::Auth::Password { vault_key } => {
+                if !has_sshpass {
+                    return Err("Password auth requires sshpass".to_string());
+                }
+                if vault_key.is_empty() {
+                    return Err("Password not configured".to_string());
+                }
+                let mut a = vec!["-p".to_string(), vault_key.clone(), "scp".to_string()];
+                a.push("-o".to_string());
+                a.push("StrictHostKeyChecking=no".to_string());
+                a.push("-P".to_string());
+                a.push(port_str);
+                a.push(local_path.to_string());
+                a.push(remote_target);
+                ("sshpass".to_string(), a)
+            }
+            crate::config::models::Auth::Key { path, .. } => {
+                let mut a = vec![
+                    "scp".to_string(),
+                    "-o".to_string(), "StrictHostKeyChecking=no".to_string(),
+                    "-P".to_string(), port_str,
+                    "-i".to_string(), path.clone(),
+                    local_path.to_string(),
+                    remote_target,
+                ];
+                ("scp".to_string(), a)
+            }
+        };
 
-        args.push(local_path);
-        args.push(&remote_target);
-
-        let output = Command::new("scp")
+        let output = Command::new(&program)
             .args(&args)
             .output()
-            .map_err(|e| format!("Failed to run scp: {}", e))?;
+            .map_err(|e| format!("Failed to run {}: {}", program, e))?;
 
         if output.status.success() {
             Ok(())
@@ -143,31 +166,54 @@ impl RemoteFs {
             format!("{}/{}", self.current_dir, remote_path)
         };
 
-        // Usar SCP para download
         use std::process::Command;
 
         let user_host = format!("{}@{}", server.user, server.host);
         let remote_source = format!("{}:{}", user_host, full_remote);
         let port_str = server.port.to_string();
 
-        let mut args = vec![
-            "-o", "StrictHostKeyChecking=no",
-            "-P", &port_str,
-        ];
+        // Verificar se temos sshpass para autenticação por senha
+        let has_sshpass = Command::new("which")
+            .arg("sshpass")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
-        // Adicionar chave se existir
-        if let crate::config::models::Auth::Key { path, .. } = &server.auth {
-            args.push("-i");
-            args.push(path);
-        }
+        // Determinar programa e argumentos
+        let (program, mut args) = match &server.auth {
+            crate::config::models::Auth::Password { vault_key } => {
+                if !has_sshpass {
+                    return Err("Password auth requires sshpass".to_string());
+                }
+                if vault_key.is_empty() {
+                    return Err("Password not configured".to_string());
+                }
+                let mut a = vec!["-p".to_string(), vault_key.clone(), "scp".to_string()];
+                a.push("-o".to_string());
+                a.push("StrictHostKeyChecking=no".to_string());
+                a.push("-P".to_string());
+                a.push(port_str);
+                a.push(remote_source);
+                a.push(local_path.to_string());
+                ("sshpass".to_string(), a)
+            }
+            crate::config::models::Auth::Key { path, .. } => {
+                let mut a = vec![
+                    "scp".to_string(),
+                    "-o".to_string(), "StrictHostKeyChecking=no".to_string(),
+                    "-P".to_string(), port_str,
+                    "-i".to_string(), path.clone(),
+                    remote_source,
+                    local_path.to_string(),
+                ];
+                ("scp".to_string(), a)
+            }
+        };
 
-        args.push(&remote_source);
-        args.push(local_path);
-
-        let output = Command::new("scp")
+        let output = Command::new(&program)
             .args(&args)
             .output()
-            .map_err(|e| format!("Failed to run scp: {}", e))?;
+            .map_err(|e| format!("Failed to run {}: {}", program, e))?;
 
         if output.status.success() {
             Ok(())
