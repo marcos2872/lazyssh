@@ -6,7 +6,7 @@ pub mod vault;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEvent, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -499,6 +499,39 @@ async fn main() -> Result<()> {
                         }
                         _ => {}
                     }
+                }
+            }
+
+            // Tratar eventos do mouse (scroll)
+            if let Event::Mouse(mouse) = event::read()? {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                            if let Some(ssh) = &mut app.ssh_state {
+                                ssh.scroll_up(3);
+                            }
+                        } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                            if let Some(sftp) = &mut app.sftp_state {
+                                sftp.previous_item();
+                            }
+                        } else {
+                            app.previous();
+                        }
+                    }
+                    MouseEventKind::ScrollDown => {
+                        if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                            if let Some(ssh) = &mut app.ssh_state {
+                                ssh.scroll_down(3);
+                            }
+                        } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                            if let Some(sftp) = &mut app.sftp_state {
+                                sftp.next_item();
+                            }
+                        } else {
+                            app.next();
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
