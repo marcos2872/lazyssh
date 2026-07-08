@@ -169,9 +169,12 @@ async fn main() -> Result<()> {
         })?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match app.current_view {
+            let event = event::read()?;
+
+            match event {
+                Event::Key(key) => {
+                    if key.kind == KeyEventKind::Press {
+                        match app.current_view {
                         tui::app::CurrentView::ServerList => {
                             match app.input_mode {
                                 tui::app::InputMode::Normal => match key.code {
@@ -500,39 +503,41 @@ async fn main() -> Result<()> {
                         _ => {}
                     }
                 }
-            }
-
-            // Tratar eventos do mouse (scroll)
-            if let Event::Mouse(mouse) = event::read()? {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                            if let Some(ssh) = &mut app.ssh_state {
-                                ssh.scroll_up(3);
-                            }
-                        } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
-                            if let Some(sftp) = &mut app.sftp_state {
-                                sftp.previous_item();
-                            }
-                        } else {
-                            app.previous();
-                        }
-                    }
-                    MouseEventKind::ScrollDown => {
-                        if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                            if let Some(ssh) = &mut app.ssh_state {
-                                ssh.scroll_down(3);
-                            }
-                        } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
-                            if let Some(sftp) = &mut app.sftp_state {
-                                sftp.next_item();
-                            }
-                        } else {
-                            app.next();
-                        }
-                    }
-                    _ => {}
                 }
+
+                // Tratar eventos do mouse (scroll)
+                Event::Mouse(mouse) => {
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                                if let Some(ssh) = &mut app.ssh_state {
+                                    ssh.scroll_up(3);
+                                }
+                            } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                                if let Some(sftp) = &mut app.sftp_state {
+                                    sftp.previous_item();
+                                }
+                            } else {
+                                app.previous();
+                            }
+                        }
+                        MouseEventKind::ScrollDown => {
+                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                                if let Some(ssh) = &mut app.ssh_state {
+                                    ssh.scroll_down(3);
+                                }
+                            } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                                if let Some(sftp) = &mut app.sftp_state {
+                                    sftp.next_item();
+                                }
+                            } else {
+                                app.next();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
 
