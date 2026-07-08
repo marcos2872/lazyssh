@@ -1,4 +1,6 @@
+use lazyssh::config::file::{get_config_path, load_config, save_config};
 use lazyssh::config::models::{AppConfig, Auth, Server};
+use std::fs;
 
 #[test]
 fn test_server_creation() {
@@ -77,4 +79,40 @@ fn test_config_password_serialization_round_trip() {
     let deserialized: AppConfig = serde_json::from_str(&json).expect("deserialization failed");
     assert_eq!(config, deserialized);
     assert!(json.contains("\"type\":\"Password\""));
+}
+
+#[test]
+fn test_config_path() {
+    let path = get_config_path();
+    assert!(path.to_string_lossy().contains("lazyssh"));
+}
+
+#[test]
+fn test_save_and_load_config() {
+    let test_dir = std::env::temp_dir().join("lazyssh_test");
+    fs::create_dir_all(&test_dir).unwrap();
+
+    let config = AppConfig {
+        servers: vec![Server {
+            name: "test".to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 22,
+            user: "user".to_string(),
+            auth: Auth::Key {
+                path: "~/.ssh/id_rsa".to_string(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+        }],
+    };
+
+    let path = test_dir.join("servers.toml");
+    save_config(&config, &path).unwrap();
+    let loaded = load_config(&path).unwrap();
+
+    assert_eq!(loaded.servers.len(), 1);
+    assert_eq!(loaded.servers[0].name, "test");
+
+    fs::remove_dir_all(&test_dir).unwrap();
 }
