@@ -66,6 +66,11 @@ async fn main() -> Result<()> {
                                         app.input_mode = tui::app::InputMode::Search;
                                         app.input.clear();
                                     }
+                                    KeyCode::Char('p') => {
+                                        if let Some(server) = app.selected_server_mut() {
+                                            server.pinned = !server.pinned;
+                                        }
+                                    }
                                     KeyCode::Char('s') => app.open_sftp(),
                                     KeyCode::Enter => {
                                         if let Some(_server) = app.selected_server() {

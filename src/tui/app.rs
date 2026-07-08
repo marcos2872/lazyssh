@@ -67,6 +67,12 @@ impl App {
             .and_then(|&i| self.servers.get(i))
     }
 
+    pub fn selected_server_mut(&mut self) -> Option<&mut Server> {
+        self.filtered_indices
+            .get(self.selected)
+            .and_then(|&i| self.servers.get_mut(i))
+    }
+
     pub fn filter(&mut self, query: &str) {
         if query.is_empty() {
             self.filtered_indices = (0..self.servers.len()).collect();
