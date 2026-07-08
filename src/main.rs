@@ -17,7 +17,7 @@ use ratatui::{
 };
 use std::io;
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App};
+use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, Theme};
 
 struct CleanupGuard;
 
@@ -45,107 +45,212 @@ async fn main() -> Result<()> {
             match app.current_view {
                 tui::app::CurrentView::ServerList => {
                     render_server_list(f, &app);
+
+                    // Overlay escuro quando modal está aberto
+                    if app.insert_state.is_some() || app.edit_state.is_some() {
+                        let area = f.area();
+                        let overlay = ratatui::widgets::Block::default()
+                            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black).add_modifier(ratatui::style::Modifier::DIM));
+                        f.render_widget(overlay, area);
+                    }
+
                     if let Some(ref state) = app.insert_state {
                         let area = f.area();
                         let is_key = state.is_key_auth();
-                        let height: u16 = if is_key { 12 } else { 10 };
-                        let y = if area.height > height { (area.height - height) / 2 } else { 0 };
-                        let rect = ratatui::layout::Rect::new(
-                            area.width / 4,
-                            y,
-                            area.width / 2,
-                            height,
-                        );
+                        let height: u16 = if is_key { 14 } else { 12 };
+                        let width: u16 = 50;
+                        let x = (area.width - width) / 2;
+                        let y = (area.height - height) / 2;
+                        let rect = ratatui::layout::Rect::new(x, y, width, height);
 
                         let mut lines = vec![];
 
+                        // Título estilizado
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  ➕ Novo Servidor  ", 
+                                ratatui::style::Style::default().fg(Theme::accent()).add_modifier(ratatui::style::Modifier::BOLD)),
+                        ]));
+                        lines.push(ratatui::text::Line::from("─".repeat(width as usize - 2)));
+
                         // Campos fixos
                         let base_fields = [
-                            (tui::app::InsertField::Name, "Nome", &state.name),
-                            (tui::app::InsertField::Host, "Host", &state.host),
-                            (tui::app::InsertField::Port, "Porta", &state.port),
-                            (tui::app::InsertField::User, "Usuário", &state.user),
-                            (tui::app::InsertField::AuthType, "Auth (key/password)", &state.auth_type),
+                            (tui::app::InsertField::Name, "📝 Nome", &state.name),
+                            (tui::app::InsertField::Host, "🌐 Host", &state.host),
+                            (tui::app::InsertField::Port, "🔌 Porta", &state.port),
+                            (tui::app::InsertField::User, "👤 Usuário", &state.user),
+                            (tui::app::InsertField::AuthType, "🔐 Auth", &state.auth_type),
                         ];
 
                         for (field_type, label, value) in &base_fields {
-                            let marker = if &state.field == field_type { "▶" } else { " " };
-                            let line = format!("{} {}: {}", marker, label, value);
-                            lines.push(ratatui::text::Line::from(line));
+                            let is_active = &state.field == field_type;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled(format!("{}: ", label), ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(*value, style),
+                            ]));
                         }
 
                         // Campos dinâmicos baseado no auth type
                         if is_key {
-                            let marker_key = if state.field == tui::app::InsertField::KeyPath { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Caminho chave: {}", marker_key, state.key_path)));
+                            let is_active = state.field == tui::app::InsertField::KeyPath;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Chave: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&state.key_path, style),
+                            ]));
 
-                            let marker_pass = if state.field == tui::app::InsertField::Passphrase { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Passphrase: {}", marker_pass, state.passphrase)));
+                            let is_active = state.field == tui::app::InsertField::Passphrase;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&state.passphrase, style),
+                            ]));
                         } else {
-                            let marker_pass = if state.field == tui::app::InsertField::Password { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Senha: {}", marker_pass, state.password)));
+                            let is_active = state.field == tui::app::InsertField::Password;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&state.password, style),
+                            ]));
                         }
 
                         lines.push(ratatui::text::Line::from(""));
-                        lines.push(ratatui::text::Line::from("↑/↓/Tab: próximo campo"));
-                        lines.push(ratatui::text::Line::from("Enter: salvar (no último campo)"));
-                        lines.push(ratatui::text::Line::from("Esc: cancelar"));
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  ↑/↓/Tab: próximo campo  ", ratatui::style::Style::default().fg(Theme::text_dim())),
+                            ratatui::text::Span::styled("│  Esc: cancelar", ratatui::style::Style::default().fg(Theme::error())),
+                        ]));
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  Enter: salvar (no último campo)  ", ratatui::style::Style::default().fg(Theme::success())),
+                        ]));
 
                         let block = ratatui::widgets::Block::default()
                             .borders(ratatui::widgets::Borders::ALL)
-                            .title("Novo Servidor");
+                            .border_style(Theme::modal_border_style())
+                            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black));
 
                         let input = ratatui::widgets::Paragraph::new(lines).block(block);
                         f.render_widget(input, rect);
                     } else if let Some(ref edit) = app.edit_state {
                         let area = f.area();
                         let is_key = edit.is_key_auth();
-                        let height: u16 = if is_key { 13 } else { 11 };
-                        let y = if area.height > height { (area.height - height) / 2 } else { 0 };
-                        let rect = ratatui::layout::Rect::new(
-                            area.width / 4,
-                            y,
-                            area.width / 2,
-                            height,
-                        );
+                        let height: u16 = if is_key { 15 } else { 13 };
+                        let width: u16 = 50;
+                        let x = (area.width - width) / 2;
+                        let y = (area.height - height) / 2;
+                        let rect = ratatui::layout::Rect::new(x, y, width, height);
 
                         let mut lines = vec![];
 
+                        // Título estilizado
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  ✏️ Editar Servidor  ", 
+                                ratatui::style::Style::default().fg(Theme::accent()).add_modifier(ratatui::style::Modifier::BOLD)),
+                        ]));
+                        lines.push(ratatui::text::Line::from("─".repeat(width as usize - 2)));
+
                         // Campos fixos
                         let base_fields = [
-                            (tui::app::EditField::Name, "Nome", &edit.name),
-                            (tui::app::EditField::Host, "Host", &edit.host),
-                            (tui::app::EditField::Port, "Porta", &edit.port),
-                            (tui::app::EditField::User, "Usuário", &edit.user),
-                            (tui::app::EditField::AuthType, "Auth (key/password)", &edit.auth_type),
+                            (tui::app::EditField::Name, "📝 Nome", &edit.name),
+                            (tui::app::EditField::Host, "🌐 Host", &edit.host),
+                            (tui::app::EditField::Port, "🔌 Porta", &edit.port),
+                            (tui::app::EditField::User, "👤 Usuário", &edit.user),
+                            (tui::app::EditField::AuthType, "🔐 Auth", &edit.auth_type),
                         ];
 
                         for (field_type, label, value) in &base_fields {
-                            let marker = if &edit.field == field_type { "▶" } else { " " };
-                            let line = format!("{} {}: {}", marker, label, value);
-                            lines.push(ratatui::text::Line::from(line));
+                            let is_active = &edit.field == field_type;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled(format!("{}: ", label), ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(*value, style),
+                            ]));
                         }
 
                         // Campos dinâmicos baseado no auth type
                         if is_key {
-                            let marker_key = if edit.field == tui::app::EditField::KeyPath { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Caminho chave: {}", marker_key, edit.key_path)));
+                            let is_active = edit.field == tui::app::EditField::KeyPath;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Chave: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&edit.key_path, style),
+                            ]));
 
-                            let marker_pass = if edit.field == tui::app::EditField::Passphrase { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Passphrase: {}", marker_pass, edit.passphrase)));
+                            let is_active = edit.field == tui::app::EditField::Passphrase;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&edit.passphrase, style),
+                            ]));
                         } else {
-                            let marker_pass = if edit.field == tui::app::EditField::Password { "▶" } else { " " };
-                            lines.push(ratatui::text::Line::from(format!("{} Senha: {}", marker_pass, edit.password)));
+                            let is_active = edit.field == tui::app::EditField::Password;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active { 
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else { 
+                                ratatui::style::Style::default().fg(Theme::text()) 
+                            };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(&edit.password, style),
+                            ]));
                         }
 
                         lines.push(ratatui::text::Line::from(""));
-                        lines.push(ratatui::text::Line::from("↑/↓/Tab: próximo campo"));
-                        lines.push(ratatui::text::Line::from("Enter: salvar (no último campo)"));
-                        lines.push(ratatui::text::Line::from("Esc: cancelar"));
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  ↑/↓/Tab: próximo campo  ", ratatui::style::Style::default().fg(Theme::text_dim())),
+                            ratatui::text::Span::styled("│  Esc: cancelar", ratatui::style::Style::default().fg(Theme::error())),
+                        ]));
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled("  Enter: salvar (no último campo)  ", ratatui::style::Style::default().fg(Theme::success())),
+                        ]));
 
                         let block = ratatui::widgets::Block::default()
                             .borders(ratatui::widgets::Borders::ALL)
-                            .title("Editar Servidor");
+                            .border_style(Theme::modal_border_style())
+                            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black));
 
                         let input = ratatui::widgets::Paragraph::new(lines).block(block);
                         f.render_widget(input, rect);
