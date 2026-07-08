@@ -16,7 +16,7 @@ use ratatui::{
 };
 use std::io;
 
-use tui::{render_server_list, render_sftp_browser, render_ssh_terminal, App};
+use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App};
 
 struct CleanupGuard;
 
@@ -162,6 +162,10 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
+
+            // Renderizar notificações por cima de tudo
+            app.notifications.clear_expired();
+            render_notifications(f, &app.notifications, f.area());
         })?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -192,6 +196,8 @@ async fn main() -> Result<()> {
                                     KeyCode::Char('p') => {
                                         if let Some(server) = app.selected_server_mut() {
                                             server.pinned = !server.pinned;
+                                            let status = if server.pinned { "fixado" } else { "desafixado" };
+                                            app.notifications.success(&format!("Servidor {}!", status));
                                             let _ = config::save_config(
                                                 &config::AppConfig { servers: app.servers.clone() },
                                                 &config::get_config_path(),
@@ -203,6 +209,7 @@ async fn main() -> Result<()> {
                                             let name = server.name.clone();
                                             app.servers.retain(|s| s.name != name);
                                             app.filter(&app.input.clone());
+                                            app.notifications.success(&format!("Servidor '{}' removido.", name));
                                             let _ = config::save_config(
                                                 &config::AppConfig { servers: app.servers.clone() },
                                                 &config::get_config_path(),
@@ -253,7 +260,7 @@ async fn main() -> Result<()> {
 
                                                     if !name.is_empty() && !host.is_empty() {
                                                         let server = config::Server {
-                                                            name,
+                                                            name: name.clone(),
                                                             host,
                                                             port,
                                                             user,
@@ -267,6 +274,9 @@ async fn main() -> Result<()> {
                                                             &config::AppConfig { servers: app.servers.clone() },
                                                             &config::get_config_path(),
                                                         );
+                                                        app.notifications.success(&format!("Servidor '{}' adicionado!", name));
+                                                    } else {
+                                                        app.notifications.warning("Nome e Host são obrigatórios.");
                                                     }
                                                     app.input_mode = tui::app::InputMode::Normal;
                                                     app.insert_state = None;
@@ -312,7 +322,7 @@ async fn main() -> Result<()> {
                                                     let auth = edit.build_auth();
 
                                                     if let Some(server) = app.servers.get_mut(index) {
-                                                        server.name = name;
+                                                        server.name = name.clone();
                                                         server.host = host;
                                                         server.port = port;
                                                         server.user = user;
@@ -321,6 +331,7 @@ async fn main() -> Result<()> {
                                                             &config::AppConfig { servers: app.servers.clone() },
                                                             &config::get_config_path(),
                                                         );
+                                                        app.notifications.success(&format!("Servidor '{}' atualizado!", name));
                                                     }
                                                     app.input_mode = tui::app::InputMode::Normal;
                                                     app.edit_state = None;

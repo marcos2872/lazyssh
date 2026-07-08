@@ -2,6 +2,7 @@ use crate::config::models::{Auth, Server};
 use crate::ssh::execute_ssh_command;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
 use super::ssh_terminal::SshTerminalState;
 
@@ -327,11 +328,18 @@ pub struct App {
     pub ssh_state: Option<SshTerminalState>,
     pub insert_state: Option<InsertState>,
     pub edit_state: Option<EditState>,
+    pub notifications: NotificationQueue,
 }
 
 impl App {
     pub fn new(servers: Vec<Server>) -> Self {
         let filtered_indices = (0..servers.len()).collect();
+        let mut notifications = NotificationQueue::new();
+        if servers.is_empty() {
+            notifications.info("Nenhum servidor configurado. Pressione 'a' para adicionar.");
+        } else {
+            notifications.success(&format!("{} servidor(es) carregado(s).", servers.len()));
+        }
         Self {
             servers,
             filtered_indices,
@@ -344,6 +352,7 @@ impl App {
             ssh_state: None,
             insert_state: None,
             edit_state: None,
+            notifications,
         }
     }
 
@@ -415,6 +424,7 @@ impl App {
     pub fn connect_ssh(&mut self) {
         if let Some(server) = self.selected_server() {
             let server = server.clone();
+            self.notifications.info(&format!("Conectando a {}...", server.name));
             self.current_view = CurrentView::SshTerminal;
 
             let mut state = SshTerminalState::new(server.clone());
@@ -430,9 +440,11 @@ impl App {
                     if !output.trim().is_empty() {
                         state.add_output(output.trim().to_string());
                     }
+                    self.notifications.success(&format!("Conectado a {}!", server.name));
                 }
                 Err(e) => {
-                    state.set_error(e);
+                    state.set_error(e.clone());
+                    self.notifications.error(&format!("Falha ao conectar: {}", e));
                 }
             }
 
