@@ -48,9 +48,9 @@ async fn main() -> Result<()> {
                         let area = f.area();
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 4,
+                            area.height / 2 - 6,
                             area.width / 2,
-                            10,
+                            14,
                         );
 
                         let mut lines = vec![];
@@ -59,6 +59,8 @@ async fn main() -> Result<()> {
                             (tui::app::InsertField::Host, "Host"),
                             (tui::app::InsertField::Port, "Porta"),
                             (tui::app::InsertField::User, "Usuário"),
+                            (tui::app::InsertField::AuthType, "Auth (key/password)"),
+                            (tui::app::InsertField::KeyPath, "Caminho chave"),
                         ];
 
                         for (field_type, label) in &fields {
@@ -67,6 +69,8 @@ async fn main() -> Result<()> {
                                 tui::app::InsertField::Host => &state.host,
                                 tui::app::InsertField::Port => &state.port,
                                 tui::app::InsertField::User => &state.user,
+                                tui::app::InsertField::AuthType => &state.auth_type,
+                                tui::app::InsertField::KeyPath => &state.key_path,
                             };
                             let marker = if &state.field == field_type { "▶" } else { " " };
                             let line = format!("{} {}: {}", marker, label, value);
@@ -74,8 +78,8 @@ async fn main() -> Result<()> {
                         }
 
                         lines.push(ratatui::text::Line::from(""));
-                        lines.push(ratatui::text::Line::from("Tab: próximo campo"));
-                        lines.push(ratatui::text::Line::from("Enter: salvar"));
+                        lines.push(ratatui::text::Line::from("↑/↓/Tab: próximo campo"));
+                        lines.push(ratatui::text::Line::from("Enter: salvar (no último campo)"));
                         lines.push(ratatui::text::Line::from("Esc: cancelar"));
 
                         let block = ratatui::widgets::Block::default()
@@ -89,9 +93,9 @@ async fn main() -> Result<()> {
                         let area = f.area();
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 5,
+                            area.height / 2 - 6,
                             area.width / 2,
-                            12,
+                            14,
                         );
 
                         let mut lines = vec![];
@@ -100,6 +104,8 @@ async fn main() -> Result<()> {
                             (tui::app::EditField::Host, "Host"),
                             (tui::app::EditField::Port, "Porta"),
                             (tui::app::EditField::User, "Usuário"),
+                            (tui::app::EditField::AuthType, "Auth (key/password)"),
+                            (tui::app::EditField::KeyPath, "Caminho chave"),
                         ];
 
                         for (field_type, label) in &fields {
@@ -108,6 +114,8 @@ async fn main() -> Result<()> {
                                 tui::app::EditField::Host => &edit.host,
                                 tui::app::EditField::Port => &edit.port,
                                 tui::app::EditField::User => &edit.user,
+                                tui::app::EditField::AuthType => &edit.auth_type,
+                                tui::app::EditField::KeyPath => &edit.key_path,
                             };
                             let marker = if &edit.field == field_type { "▶" } else { " " };
                             let line = format!("{} {}: {}", marker, label, value);
@@ -115,8 +123,8 @@ async fn main() -> Result<()> {
                         }
 
                         lines.push(ratatui::text::Line::from(""));
-                        lines.push(ratatui::text::Line::from("Tab: próximo campo"));
-                        lines.push(ratatui::text::Line::from("Enter: salvar"));
+                        lines.push(ratatui::text::Line::from("↑/↓/Tab: próximo campo"));
+                        lines.push(ratatui::text::Line::from("Enter: salvar (no último campo)"));
                         lines.push(ratatui::text::Line::from("Esc: cancelar"));
 
                         let block = ratatui::widgets::Block::default()
@@ -202,8 +210,11 @@ async fn main() -> Result<()> {
                                                 app.input_mode = tui::app::InputMode::Normal;
                                                 app.insert_state = None;
                                             }
-                                            KeyCode::Tab => {
+                                            KeyCode::Tab | KeyCode::Down => {
                                                 state.next_field();
+                                            }
+                                            KeyCode::Up => {
+                                                state.prev_field();
                                             }
                                             KeyCode::Char(c) => {
                                                 state.current_value_mut().push(c);
@@ -212,11 +223,12 @@ async fn main() -> Result<()> {
                                                 state.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                if matches!(state.field, tui::app::InsertField::User) {
+                                                if matches!(state.field, tui::app::InsertField::KeyPath) {
                                                     let name = state.name.clone();
                                                     let host = state.host.clone();
                                                     let port: u16 = state.port.parse().unwrap_or(22);
                                                     let user = state.user.clone();
+                                                    let auth = state.build_auth();
 
                                                     if !name.is_empty() && !host.is_empty() {
                                                         let server = config::Server {
@@ -224,10 +236,7 @@ async fn main() -> Result<()> {
                                                             host,
                                                             port,
                                                             user,
-                                                            auth: config::Auth::Key {
-                                                                path: "~/.ssh/id_rsa".to_string(),
-                                                                passphrase: None,
-                                                            },
+                                                            auth,
                                                             tags: vec![],
                                                             pinned: false,
                                                         };
@@ -253,8 +262,11 @@ async fn main() -> Result<()> {
                                                 app.input_mode = tui::app::InputMode::Normal;
                                                 app.edit_state = None;
                                             }
-                                            KeyCode::Tab => {
+                                            KeyCode::Tab | KeyCode::Down => {
                                                 edit.next_field();
+                                            }
+                                            KeyCode::Up => {
+                                                edit.prev_field();
                                             }
                                             KeyCode::Char(c) => {
                                                 edit.current_value_mut().push(c);
@@ -263,18 +275,20 @@ async fn main() -> Result<()> {
                                                 edit.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                if matches!(edit.field, tui::app::EditField::User) {
+                                                if matches!(edit.field, tui::app::EditField::KeyPath) {
                                                     let index = edit.server_index;
                                                     let name = edit.name.clone();
                                                     let host = edit.host.clone();
                                                     let port: u16 = edit.port.parse().unwrap_or(22);
                                                     let user = edit.user.clone();
+                                                    let auth = edit.build_auth();
 
                                                     if let Some(server) = app.servers.get_mut(index) {
                                                         server.name = name;
                                                         server.host = host;
                                                         server.port = port;
                                                         server.user = user;
+                                                        server.auth = auth;
                                                         let _ = config::save_config(
                                                             &config::AppConfig { servers: app.servers.clone() },
                                                             &config::get_config_path(),

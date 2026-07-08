@@ -1,4 +1,4 @@
-use crate::config::models::Server;
+use crate::config::models::{Auth, Server};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use super::sftp_browser::SftpState;
@@ -10,6 +10,8 @@ pub enum EditField {
     Host,
     Port,
     User,
+    AuthType,
+    KeyPath,
 }
 
 #[derive(Debug, Clone)]
@@ -19,17 +21,25 @@ pub struct EditState {
     pub host: String,
     pub port: String,
     pub user: String,
+    pub auth_type: String,
+    pub key_path: String,
     pub server_index: usize,
 }
 
 impl EditState {
     pub fn from_server(server: &Server, index: usize) -> Self {
+        let (auth_type, key_path) = match &server.auth {
+            Auth::Key { path, .. } => ("key".to_string(), path.clone()),
+            Auth::Password { .. } => ("password".to_string(), String::new()),
+        };
         Self {
             field: EditField::Name,
             name: server.name.clone(),
             host: server.host.clone(),
             port: server.port.to_string(),
             user: server.user.clone(),
+            auth_type,
+            key_path,
             server_index: index,
         }
     }
@@ -40,6 +50,8 @@ impl EditState {
             EditField::Host => &self.host,
             EditField::Port => &self.port,
             EditField::User => &self.user,
+            EditField::AuthType => &self.auth_type,
+            EditField::KeyPath => &self.key_path,
         }
     }
 
@@ -49,6 +61,8 @@ impl EditState {
             EditField::Host => &mut self.host,
             EditField::Port => &mut self.port,
             EditField::User => &mut self.user,
+            EditField::AuthType => &mut self.auth_type,
+            EditField::KeyPath => &mut self.key_path,
         }
     }
 
@@ -57,7 +71,20 @@ impl EditState {
             EditField::Name => EditField::Host,
             EditField::Host => EditField::Port,
             EditField::Port => EditField::User,
-            EditField::User => EditField::Name,
+            EditField::User => EditField::AuthType,
+            EditField::AuthType => EditField::KeyPath,
+            EditField::KeyPath => EditField::Name,
+        };
+    }
+
+    pub fn prev_field(&mut self) {
+        self.field = match self.field {
+            EditField::Name => EditField::KeyPath,
+            EditField::Host => EditField::Name,
+            EditField::Port => EditField::Host,
+            EditField::User => EditField::Port,
+            EditField::AuthType => EditField::User,
+            EditField::KeyPath => EditField::AuthType,
         };
     }
 
@@ -67,6 +94,19 @@ impl EditState {
             EditField::Host => "Host",
             EditField::Port => "Porta",
             EditField::User => "Usuário",
+            EditField::AuthType => "Auth (key/password)",
+            EditField::KeyPath => "Caminho chave",
+        }
+    }
+
+    pub fn build_auth(&self) -> Auth {
+        if self.auth_type.to_lowercase() == "password" {
+            Auth::Password { vault_key: self.name.clone() }
+        } else {
+            Auth::Key {
+                path: if self.key_path.is_empty() { "~/.ssh/id_rsa".to_string() } else { self.key_path.clone() },
+                passphrase: None,
+            }
         }
     }
 }
@@ -77,6 +117,8 @@ pub enum InsertField {
     Host,
     Port,
     User,
+    AuthType,
+    KeyPath,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +128,8 @@ pub struct InsertState {
     pub host: String,
     pub port: String,
     pub user: String,
+    pub auth_type: String,
+    pub key_path: String,
 }
 
 impl InsertState {
@@ -96,6 +140,8 @@ impl InsertState {
             host: String::new(),
             port: "22".to_string(),
             user: "root".to_string(),
+            auth_type: "key".to_string(),
+            key_path: "~/.ssh/id_rsa".to_string(),
         }
     }
 
@@ -105,6 +151,8 @@ impl InsertState {
             InsertField::Host => &self.host,
             InsertField::Port => &self.port,
             InsertField::User => &self.user,
+            InsertField::AuthType => &self.auth_type,
+            InsertField::KeyPath => &self.key_path,
         }
     }
 
@@ -114,6 +162,8 @@ impl InsertState {
             InsertField::Host => &mut self.host,
             InsertField::Port => &mut self.port,
             InsertField::User => &mut self.user,
+            InsertField::AuthType => &mut self.auth_type,
+            InsertField::KeyPath => &mut self.key_path,
         }
     }
 
@@ -122,7 +172,20 @@ impl InsertState {
             InsertField::Name => InsertField::Host,
             InsertField::Host => InsertField::Port,
             InsertField::Port => InsertField::User,
-            InsertField::User => InsertField::Name,
+            InsertField::User => InsertField::AuthType,
+            InsertField::AuthType => InsertField::KeyPath,
+            InsertField::KeyPath => InsertField::Name,
+        };
+    }
+
+    pub fn prev_field(&mut self) {
+        self.field = match self.field {
+            InsertField::Name => InsertField::KeyPath,
+            InsertField::Host => InsertField::Name,
+            InsertField::Port => InsertField::Host,
+            InsertField::User => InsertField::Port,
+            InsertField::AuthType => InsertField::User,
+            InsertField::KeyPath => InsertField::AuthType,
         };
     }
 
@@ -132,6 +195,19 @@ impl InsertState {
             InsertField::Host => "Host",
             InsertField::Port => "Porta",
             InsertField::User => "Usuário",
+            InsertField::AuthType => "Auth (key/password)",
+            InsertField::KeyPath => "Caminho chave",
+        }
+    }
+
+    pub fn build_auth(&self) -> Auth {
+        if self.auth_type.to_lowercase() == "password" {
+            Auth::Password { vault_key: self.name.clone() }
+        } else {
+            Auth::Key {
+                path: if self.key_path.is_empty() { "~/.ssh/id_rsa".to_string() } else { self.key_path.clone() },
+                passphrase: None,
+            }
         }
     }
 }
