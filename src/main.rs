@@ -44,19 +44,46 @@ async fn main() -> Result<()> {
             match app.current_view {
                 tui::app::CurrentView::ServerList => {
                     render_server_list(f, &app);
-                    if app.input_mode == tui::app::InputMode::Insert {
+                    if let Some(ref state) = app.insert_state {
                         let area = f.area();
-                        let popup = ratatui::widgets::Block::default()
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .title("Novo Servidor (nome)");
-                        let input = ratatui::widgets::Paragraph::new(app.input.as_str())
-                            .block(popup);
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 2,
+                            area.height / 2 - 4,
                             area.width / 2,
-                            3,
+                            10,
                         );
+
+                        let mut lines = vec![];
+                        let fields = [
+                            (tui::app::InsertField::Name, "Nome"),
+                            (tui::app::InsertField::Host, "Host"),
+                            (tui::app::InsertField::Port, "Porta"),
+                            (tui::app::InsertField::User, "Usuário"),
+                        ];
+
+                        for (field_type, label) in &fields {
+                            let value = match field_type {
+                                tui::app::InsertField::Name => &state.name,
+                                tui::app::InsertField::Host => &state.host,
+                                tui::app::InsertField::Port => &state.port,
+                                tui::app::InsertField::User => &state.user,
+                            };
+                            let marker = if &state.field == field_type { "▶" } else { " " };
+                            let line = format!("{} {}: {}", marker, label, value);
+                            lines.push(ratatui::text::Line::from(line));
+                        }
+
+                        lines.push(ratatui::text::Line::from(""));
+                        lines.push(ratatui::text::Line::from("Tab: próximo campo"));
+                        lines.push(ratatui::text::Line::from("Enter: salvar"));
+                        lines.push(ratatui::text::Line::from("Esc: cancelar"));
+
+                        let block = ratatui::widgets::Block::default()
+                            .borders(ratatui::widgets::Borders::ALL)
+                            .title("Novo Servidor");
+
+                        let input = ratatui::widgets::Paragraph::new(lines)
+                            .block(block);
                         f.render_widget(input, rect);
                     } else if app.input_mode == tui::app::InputMode::Edit {
                         let area = f.area();
@@ -98,8 +125,8 @@ async fn main() -> Result<()> {
                                         app.input.clear();
                                     }
                                     KeyCode::Char('a') => {
+                                        app.insert_state = Some(tui::app::InsertState::new());
                                         app.input_mode = tui::app::InputMode::Insert;
-                                        app.input.clear();
                                     }
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
@@ -132,43 +159,56 @@ async fn main() -> Result<()> {
                                     }
                                     _ => {}
                                 },
-                                tui::app::InputMode::Insert => match key.code {
-                                    KeyCode::Esc => {
-                                        app.input_mode = tui::app::InputMode::Normal;
-                                        app.input.clear();
-                                    }
-                                    KeyCode::Char(c) => {
-                                        app.input.push(c);
-                                    }
-                                    KeyCode::Backspace => {
-                                        app.input.pop();
-                                    }
-                                    KeyCode::Enter => {
-                                        let name = app.input.clone();
-                                        if !name.is_empty() {
-                                            let server = config::Server {
-                                                name: name.clone(),
-                                                host: "localhost".to_string(),
-                                                port: 22,
-                                                user: "root".to_string(),
-                                                auth: config::Auth::Key {
-                                                    path: "~/.ssh/id_rsa".to_string(),
-                                                    passphrase: None,
-                                                },
-                                                tags: vec![],
-                                                pinned: false,
-                                            };
-                                            app.servers.push(server);
-                                            app.filter(&app.input.clone());
-                                            let _ = config::save_config(
-                                                &config::AppConfig { servers: app.servers.clone() },
-                                                &config::get_config_path(),
-                                            );
+                                tui::app::InputMode::Insert => {
+                                    if let Some(ref mut state) = app.insert_state {
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                app.input_mode = tui::app::InputMode::Normal;
+                                                app.insert_state = None;
+                                            }
+                                            KeyCode::Tab => {
+                                                state.next_field();
+                                            }
+                                            KeyCode::Char(c) => {
+                                                state.current_value_mut().push(c);
+                                            }
+                                            KeyCode::Backspace => {
+                                                state.current_value_mut().pop();
+                                            }
+                                            KeyCode::Enter => {
+                                                if matches!(state.field, tui::app::InsertField::User) {
+                                                    let name = state.name.clone();
+                                                    let host = state.host.clone();
+                                                    let port: u16 = state.port.parse().unwrap_or(22);
+                                                    let user = state.user.clone();
+
+                                                    if !name.is_empty() && !host.is_empty() {
+                                                        let server = config::Server {
+                                                            name,
+                                                            host,
+                                                            port,
+                                                            user,
+                                                            auth: config::Auth::Key {
+                                                                path: "~/.ssh/id_rsa".to_string(),
+                                                                passphrase: None,
+                                                            },
+                                                            tags: vec![],
+                                                            pinned: false,
+                                                        };
+                                                        app.servers.push(server);
+                                                        app.filter(&app.input.clone());
+                                                        let _ = config::save_config(
+                                                            &config::AppConfig { servers: app.servers.clone() },
+                                                            &config::get_config_path(),
+                                                        );
+                                                    }
+                                                    app.input_mode = tui::app::InputMode::Normal;
+                                                    app.insert_state = None;
+                                                }
+                                            }
+                                            _ => {}
                                         }
-                                        app.input_mode = tui::app::InputMode::Normal;
-                                        app.input.clear();
                                     }
-                                    _ => {}
                                 },
                                 tui::app::InputMode::Edit => match key.code {
                                     KeyCode::Esc => {

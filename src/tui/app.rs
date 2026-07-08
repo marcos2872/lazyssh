@@ -1,6 +1,71 @@
 use crate::config::models::Server;
 use super::sftp_browser::SftpState;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsertField {
+    Name,
+    Host,
+    Port,
+    User,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertState {
+    pub field: InsertField,
+    pub name: String,
+    pub host: String,
+    pub port: String,
+    pub user: String,
+}
+
+impl InsertState {
+    pub fn new() -> Self {
+        Self {
+            field: InsertField::Name,
+            name: String::new(),
+            host: String::new(),
+            port: "22".to_string(),
+            user: "root".to_string(),
+        }
+    }
+
+    pub fn current_value(&self) -> &str {
+        match self.field {
+            InsertField::Name => &self.name,
+            InsertField::Host => &self.host,
+            InsertField::Port => &self.port,
+            InsertField::User => &self.user,
+        }
+    }
+
+    pub fn current_value_mut(&mut self) -> &mut String {
+        match self.field {
+            InsertField::Name => &mut self.name,
+            InsertField::Host => &mut self.host,
+            InsertField::Port => &mut self.port,
+            InsertField::User => &mut self.user,
+        }
+    }
+
+    pub fn next_field(&mut self) {
+        self.field = match self.field {
+            InsertField::Name => InsertField::Host,
+            InsertField::Host => InsertField::Port,
+            InsertField::Port => InsertField::User,
+            InsertField::User => InsertField::Name,
+        };
+    }
+
+    pub fn field_label(&self) -> &str {
+        match self.field {
+            InsertField::Name => "Nome",
+            InsertField::Host => "Host",
+            InsertField::Port => "Porta",
+            InsertField::User => "Usuário",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum InputMode {
     Normal,
@@ -26,6 +91,7 @@ pub struct App {
     pub input: String,
     pub should_quit: bool,
     pub sftp_state: Option<SftpState>,
+    pub insert_state: Option<InsertState>,
 }
 
 impl App {
@@ -40,6 +106,7 @@ impl App {
             input: String::new(),
             should_quit: false,
             sftp_state: None,
+            insert_state: None,
         }
     }
 
