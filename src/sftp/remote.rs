@@ -30,30 +30,25 @@ impl RemoteFs {
             None => return vec![],
         };
 
-        let output = match execute_ssh_command(server, &format!("ls -la \"{}\"", self.current_dir)) {
+        // Usar ls -1p para obter lista simples com / ao final de diretórios
+        let output = match execute_ssh_command(server, &format!("ls -1p \"{}\"", self.current_dir)) {
             Ok(o) => o,
             Err(_) => return vec![],
         };
 
         output
             .lines()
-            .filter(|line| !line.starts_with("total"))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 9 {
-                    let is_dir = parts[0].starts_with('d');
-                    let name = parts[8..].join(" ");
-                    let size: u64 = parts[4].parse().unwrap_or(0);
-
-                    if name == "." || name == ".." {
-                        return None;
-                    }
-
-                    Some(FileInfo { name, is_dir, size })
-                } else {
-                    None
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let name = line.trim_end_matches('/').to_string();
+                let is_dir = line.ends_with('/');
+                FileInfo {
+                    name,
+                    is_dir,
+                    size: 0, // Tamanho não disponível com ls -1p
                 }
             })
+            .filter(|f| f.name != "." && f.name != "..")
             .collect()
     }
 

@@ -93,16 +93,11 @@ impl SftpState {
     pub fn enter_directory(&mut self) -> Result<(), String> {
         match self.focus_side {
             Side::Local => {
-                let name = self.local_files.get(self.local_selected)
-                    .map(|f| f.name.clone())
+                let file = self.local_files.get(self.local_selected)
                     .ok_or_else(|| "No file selected".to_string())?;
 
-                let is_dir = self.local_files.get(self.local_selected)
-                    .map(|f| f.is_dir)
-                    .unwrap_or(false);
-
-                if is_dir {
-                    self.local.cd(&name).map_err(|e| e.to_string())?;
+                if file.is_dir {
+                    self.local.cd(&file.name).map_err(|e| e.to_string())?;
                     self.refresh_local();
                     Ok(())
                 } else {
@@ -110,16 +105,11 @@ impl SftpState {
                 }
             }
             Side::Remote => {
-                let name = self.remote_files.get(self.remote_selected)
-                    .map(|f| f.name.clone())
+                let file = self.remote_files.get(self.remote_selected)
                     .ok_or_else(|| "No file selected".to_string())?;
 
-                let is_dir = self.remote_files.get(self.remote_selected)
-                    .map(|f| f.is_dir)
-                    .unwrap_or(false);
-
-                if is_dir {
-                    self.remote.cd(&name).map_err(|e| e.to_string())?;
+                if file.is_dir {
+                    self.remote.cd(&file.name).map_err(|e| e.to_string())?;
                     self.refresh_remote();
                     Ok(())
                 } else {
