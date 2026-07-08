@@ -72,9 +72,15 @@ pub fn execute_ssh_command(server: &Server, command: &str) -> Result<String, Str
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    if output.status.success() {
-        Ok(stdout)
-    } else {
+    // Sempre retornar o output (stdout + stderr) para mostrar no terminal
+    // Não fechar a conexão por erro de comando
+    let mut result = String::new();
+
+    if !stdout.is_empty() {
+        result.push_str(&stdout);
+    }
+
+    if !stderr.is_empty() {
         // Filtrar mensagens de password prompt
         let filtered_stderr = stderr
             .lines()
@@ -82,14 +88,14 @@ pub fn execute_ssh_command(server: &Server, command: &str) -> Result<String, Str
             .collect::<Vec<_>>()
             .join("\n");
 
-        if filtered_stderr.trim().is_empty() {
-            if stdout.trim().is_empty() {
-                Err("Comando executado sem saída".to_string())
-            } else {
-                Ok(stdout)
+        if !filtered_stderr.trim().is_empty() {
+            if !result.is_empty() {
+                result.push('\n');
             }
-        } else {
-            Err(filtered_stderr)
+            result.push_str(&filtered_stderr);
         }
     }
+
+    // Retornar sempre Ok para não fechar a conexão
+    Ok(result)
 }

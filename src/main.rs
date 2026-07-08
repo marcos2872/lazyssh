@@ -473,7 +473,8 @@ async fn main() -> Result<()> {
                                                             }
                                                         }
                                                         Err(e) => {
-                                                            ssh.set_error(e.to_string());
+                                                            // Mostrar erro mas não fechar conexão
+                                                            ssh.add_output(format!("Erro: {}", e));
                                                         }
                                                     }
                                                 }
