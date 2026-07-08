@@ -99,6 +99,7 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
             lines.push(Line::from(vec![
                 Span::styled(prompt_str, Style::default().fg(Color::Green)),
                 Span::styled(&state.input, Style::default().fg(Color::White)),
+                Span::styled("█", Style::default().fg(Color::Green)),
             ]));
         }
         SshStatus::Connecting => {

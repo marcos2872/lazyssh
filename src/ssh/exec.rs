@@ -57,16 +57,12 @@ pub fn execute_ssh_command(server: &Server, command: &str) -> Result<String, Str
     // Construir comando final
     let (program, final_args) = if let Some(pass) = password {
         // sshpass -p <password> ssh <args>
-        eprintln!("[DEBUG] Using sshpass with password");
         let mut args = vec!["-p".to_string(), pass, "ssh".to_string()];
         args.extend(ssh_args.clone());
         ("sshpass".to_string(), args)
     } else {
-        eprintln!("[DEBUG] Using ssh without password");
         ("ssh".to_string(), ssh_args.clone())
     };
-
-    eprintln!("[DEBUG] Command: {} {:?}", program, final_args);
 
     let output = Command::new(&program)
         .args(&final_args)
