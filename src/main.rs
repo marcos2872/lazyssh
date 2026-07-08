@@ -317,6 +317,23 @@ async fn main() -> Result<()> {
                                         sftp.previous_item();
                                     }
                                 }
+                                KeyCode::Enter => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        let files = sftp.local.list().unwrap_or_default();
+                                        if let Some(file) = files.get(sftp.local_selected) {
+                                            if file.is_dir {
+                                                let _ = sftp.local.cd(&file.name);
+                                                sftp.local_selected = 0;
+                                            }
+                                        }
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        let _ = sftp.local.cd("..");
+                                        sftp.local_selected = 0;
+                                    }
+                                }
                                 _ => {}
                             }
                         }
