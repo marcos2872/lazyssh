@@ -15,6 +15,7 @@ pub enum CurrentView {
     SftpBrowser,
 }
 
+#[derive(Debug)]
 pub struct App {
     pub servers: Vec<Server>,
     pub filtered_indices: Vec<usize>,
@@ -83,5 +84,81 @@ impl App {
                 .collect();
         }
         self.selected = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::models::{Auth, Server};
+
+    fn test_servers() -> Vec<Server> {
+        vec![
+            Server {
+                name: "server1".to_string(),
+                host: "192.168.1.1".to_string(),
+                port: 22,
+                user: "user".to_string(),
+                auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
+                tags: vec!["prod".to_string()],
+                pinned: false,
+            },
+            Server {
+                name: "server2".to_string(),
+                host: "192.168.1.2".to_string(),
+                port: 22,
+                user: "user".to_string(),
+                auth: Auth::Password { vault_key: "key".to_string() },
+                tags: vec!["dev".to_string()],
+                pinned: true,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_empty_app() {
+        let app = App::new(vec![]);
+        assert!(app.filtered_indices.is_empty());
+        assert_eq!(app.selected, 0);
+        assert!(app.selected_server().is_none());
+    }
+
+    #[test]
+    fn test_next_wraps() {
+        let mut app = App::new(test_servers());
+        app.next();
+        assert_eq!(app.selected, 1);
+        app.next();
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_previous_wraps() {
+        let mut app = App::new(test_servers());
+        assert_eq!(app.selected, 0);
+        app.previous();
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn test_filter_by_name() {
+        let mut app = App::new(test_servers());
+        app.filter("server1");
+        assert_eq!(app.filtered_indices.len(), 1);
+        assert_eq!(app.selected_server().unwrap().name, "server1");
+    }
+
+    #[test]
+    fn test_filter_by_tag() {
+        let mut app = App::new(test_servers());
+        app.filter("prod");
+        assert_eq!(app.filtered_indices.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_no_matches() {
+        let mut app = App::new(test_servers());
+        app.filter("nonexistent");
+        assert!(app.filtered_indices.is_empty());
     }
 }
