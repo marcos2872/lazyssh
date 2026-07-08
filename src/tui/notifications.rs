@@ -2,12 +2,14 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use ratatui::{
-    layout::{Alignment, Rect},
+    layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+
+use super::theme::Theme;
 
 #[derive(Debug, Clone)]
 pub enum NotificationType {
@@ -144,10 +146,10 @@ pub fn render_notifications(f: &mut Frame, queue: &NotificationQueue, area: Rect
     let mut lines = vec![];
     for notification in &visible {
         let (icon, color) = match notification.notification_type {
-            NotificationType::Info => ("ℹ", Color::Cyan),
-            NotificationType::Success => ("✓", Color::Green),
-            NotificationType::Warning => ("⚠", Color::Yellow),
-            NotificationType::Error => ("✗", Color::Red),
+            NotificationType::Info => ("ℹ", Theme::primary()),
+            NotificationType::Success => ("✓", Theme::success()),
+            NotificationType::Warning => ("⚠", Theme::warning()),
+            NotificationType::Error => ("✗", Theme::error()),
         };
 
         let remaining = notification.remaining_secs();
@@ -156,7 +158,7 @@ pub fn render_notifications(f: &mut Frame, queue: &NotificationQueue, area: Rect
             Span::styled(&notification.message, Style::default().fg(color)),
             Span::styled(
                 format!(" ({}s)", remaining),
-                Style::default().fg(Color::Gray),
+                Theme::dim_style(),
             ),
         ]);
         lines.push(line);
@@ -164,9 +166,10 @@ pub fn render_notifications(f: &mut Frame, queue: &NotificationQueue, area: Rect
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Notificações")
-        .title_style(Style::default().fg(Color::White))
-        .style(Style::default().bg(Color::DarkGray));
+        .title(" 🔔 Notificações ")
+        .title_style(Theme::title_style())
+        .border_style(Theme::border_style())
+        .style(Style::default().bg(Color::Black));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, popup_area);

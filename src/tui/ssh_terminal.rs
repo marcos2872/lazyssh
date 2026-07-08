@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::config::models::Server;
+use super::theme::Theme;
 
 #[derive(Debug)]
 pub enum SshStatus {
@@ -253,17 +254,17 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
 
     // Status bar no topo
     let status_color = match &state.status {
-        SshStatus::Connecting => Color::Yellow,
-        SshStatus::Connected => Color::Green,
-        SshStatus::Error(_) => Color::Red,
-        SshStatus::Disconnected => Color::Gray,
+        SshStatus::Connecting => Theme::warning(),
+        SshStatus::Connected => Theme::success(),
+        SshStatus::Error(_) => Theme::error(),
+        SshStatus::Disconnected => Theme::text_dim(),
     };
 
     let status_text = match &state.status {
-        SshStatus::Connecting => "Conectando...",
-        SshStatus::Connected => "Conectado",
+        SshStatus::Connecting => "⏳ Conectando...",
+        SshStatus::Connected => "✓ Conectado",
         SshStatus::Error(e) => e.as_str(),
-        SshStatus::Disconnected => "Desconectado",
+        SshStatus::Disconnected => "○ Desconectado",
     };
 
     // Espaço útil = total - bordas(2) - linha do prompt(1)
@@ -324,8 +325,8 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
             let after_cursor = &state.input[state.cursor_pos..];
 
             let mut spans = vec![
-                Span::styled(prompt_str, Style::default().fg(Color::Green)),
-                Span::styled(before_cursor.to_string(), Style::default().fg(Color::White)),
+                Span::styled(prompt_str, Theme::prompt_style()),
+                Span::styled(before_cursor.to_string(), Style::default().fg(Theme::text())),
             ];
 
             if !after_cursor.is_empty() {
@@ -333,35 +334,35 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
                 if let Some(cursor_char) = chars.next() {
                     spans.push(Span::styled(
                         cursor_char.to_string(),
-                        Style::default().fg(Color::Black).bg(Color::Green),
+                        Style::default().fg(Color::Black).bg(Theme::primary()),
                     ));
                     let remaining: String = chars.collect();
                     if !remaining.is_empty() {
-                        spans.push(Span::styled(remaining, Style::default().fg(Color::White)));
+                        spans.push(Span::styled(remaining, Style::default().fg(Theme::text())));
                     }
                 }
             } else {
-                spans.push(Span::styled("█", Style::default().fg(Color::Green)));
+                spans.push(Span::styled("█", Style::default().fg(Theme::primary())));
             }
 
             output_lines.push(Line::from(spans));
         }
         SshStatus::Connecting => {
             output_lines.push(Line::from(Span::styled(
-                "Conectando...",
-                Style::default().fg(Color::Yellow),
+                "⏳ Conectando...",
+                Style::default().fg(Theme::warning()),
             )));
         }
         SshStatus::Error(_) => {
             output_lines.push(Line::from(Span::styled(
                 "Pressione 'q' ou Esc para voltar",
-                Style::default().fg(Color::Red),
+                Theme::error_style(),
             )));
         }
         SshStatus::Disconnected => {
             output_lines.push(Line::from(Span::styled(
-                "Desconectado. Pressione 'q' para voltar.",
-                Style::default().fg(Color::Gray),
+                "○ Desconectado. Pressione 'q' para voltar.",
+                Theme::dim_style(),
             )));
         }
     }
@@ -383,10 +384,11 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(
-            " {} [{}]{} ",
+            " 🖥 {} [{}]{} ",
             state.server_name, status_text, indicator_str
         ))
-        .title_style(Style::default().fg(status_color));
+        .title_style(Style::default().fg(status_color).add_modifier(ratatui::style::Modifier::BOLD))
+        .border_style(Theme::border_style());
 
     let paragraph = Paragraph::new(output_lines).block(block);
     f.render_widget(paragraph, area);
