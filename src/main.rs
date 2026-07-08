@@ -46,35 +46,43 @@ async fn main() -> Result<()> {
                     render_server_list(f, &app);
                     if let Some(ref state) = app.insert_state {
                         let area = f.area();
+                        let is_key = state.is_key_auth();
+                        let height: u16 = if is_key { 12 } else { 10 };
+                        let y = if area.height > height { (area.height - height) / 2 } else { 0 };
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 6,
+                            y,
                             area.width / 2,
-                            14,
+                            height,
                         );
 
                         let mut lines = vec![];
-                        let fields = [
-                            (tui::app::InsertField::Name, "Nome"),
-                            (tui::app::InsertField::Host, "Host"),
-                            (tui::app::InsertField::Port, "Porta"),
-                            (tui::app::InsertField::User, "Usuário"),
-                            (tui::app::InsertField::AuthType, "Auth (key/password)"),
-                            (tui::app::InsertField::KeyPath, "Caminho chave"),
+
+                        // Campos fixos
+                        let base_fields = [
+                            (tui::app::InsertField::Name, "Nome", &state.name),
+                            (tui::app::InsertField::Host, "Host", &state.host),
+                            (tui::app::InsertField::Port, "Porta", &state.port),
+                            (tui::app::InsertField::User, "Usuário", &state.user),
+                            (tui::app::InsertField::AuthType, "Auth (key/password)", &state.auth_type),
                         ];
 
-                        for (field_type, label) in &fields {
-                            let value = match field_type {
-                                tui::app::InsertField::Name => &state.name,
-                                tui::app::InsertField::Host => &state.host,
-                                tui::app::InsertField::Port => &state.port,
-                                tui::app::InsertField::User => &state.user,
-                                tui::app::InsertField::AuthType => &state.auth_type,
-                                tui::app::InsertField::KeyPath => &state.key_path,
-                            };
+                        for (field_type, label, value) in &base_fields {
                             let marker = if &state.field == field_type { "▶" } else { " " };
                             let line = format!("{} {}: {}", marker, label, value);
                             lines.push(ratatui::text::Line::from(line));
+                        }
+
+                        // Campos dinâmicos baseado no auth type
+                        if is_key {
+                            let marker_key = if state.field == tui::app::InsertField::KeyPath { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Caminho chave: {}", marker_key, state.key_path)));
+
+                            let marker_pass = if state.field == tui::app::InsertField::Passphrase { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Passphrase: {}", marker_pass, state.passphrase)));
+                        } else {
+                            let marker_pass = if state.field == tui::app::InsertField::Password { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Senha: {}", marker_pass, state.password)));
                         }
 
                         lines.push(ratatui::text::Line::from(""));
@@ -86,40 +94,47 @@ async fn main() -> Result<()> {
                             .borders(ratatui::widgets::Borders::ALL)
                             .title("Novo Servidor");
 
-                        let input = ratatui::widgets::Paragraph::new(lines)
-                            .block(block);
+                        let input = ratatui::widgets::Paragraph::new(lines).block(block);
                         f.render_widget(input, rect);
                     } else if let Some(ref edit) = app.edit_state {
                         let area = f.area();
+                        let is_key = edit.is_key_auth();
+                        let height: u16 = if is_key { 13 } else { 11 };
+                        let y = if area.height > height { (area.height - height) / 2 } else { 0 };
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 6,
+                            y,
                             area.width / 2,
-                            14,
+                            height,
                         );
 
                         let mut lines = vec![];
-                        let fields = [
-                            (tui::app::EditField::Name, "Nome"),
-                            (tui::app::EditField::Host, "Host"),
-                            (tui::app::EditField::Port, "Porta"),
-                            (tui::app::EditField::User, "Usuário"),
-                            (tui::app::EditField::AuthType, "Auth (key/password)"),
-                            (tui::app::EditField::KeyPath, "Caminho chave"),
+
+                        // Campos fixos
+                        let base_fields = [
+                            (tui::app::EditField::Name, "Nome", &edit.name),
+                            (tui::app::EditField::Host, "Host", &edit.host),
+                            (tui::app::EditField::Port, "Porta", &edit.port),
+                            (tui::app::EditField::User, "Usuário", &edit.user),
+                            (tui::app::EditField::AuthType, "Auth (key/password)", &edit.auth_type),
                         ];
 
-                        for (field_type, label) in &fields {
-                            let value = match field_type {
-                                tui::app::EditField::Name => &edit.name,
-                                tui::app::EditField::Host => &edit.host,
-                                tui::app::EditField::Port => &edit.port,
-                                tui::app::EditField::User => &edit.user,
-                                tui::app::EditField::AuthType => &edit.auth_type,
-                                tui::app::EditField::KeyPath => &edit.key_path,
-                            };
+                        for (field_type, label, value) in &base_fields {
                             let marker = if &edit.field == field_type { "▶" } else { " " };
                             let line = format!("{} {}: {}", marker, label, value);
                             lines.push(ratatui::text::Line::from(line));
+                        }
+
+                        // Campos dinâmicos baseado no auth type
+                        if is_key {
+                            let marker_key = if edit.field == tui::app::EditField::KeyPath { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Caminho chave: {}", marker_key, edit.key_path)));
+
+                            let marker_pass = if edit.field == tui::app::EditField::Passphrase { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Passphrase: {}", marker_pass, edit.passphrase)));
+                        } else {
+                            let marker_pass = if edit.field == tui::app::EditField::Password { "▶" } else { " " };
+                            lines.push(ratatui::text::Line::from(format!("{} Senha: {}", marker_pass, edit.password)));
                         }
 
                         lines.push(ratatui::text::Line::from(""));
@@ -131,8 +146,7 @@ async fn main() -> Result<()> {
                             .borders(ratatui::widgets::Borders::ALL)
                             .title("Editar Servidor");
 
-                        let input = ratatui::widgets::Paragraph::new(lines)
-                            .block(block);
+                        let input = ratatui::widgets::Paragraph::new(lines).block(block);
                         f.render_widget(input, rect);
                     }
                 }
@@ -223,7 +237,14 @@ async fn main() -> Result<()> {
                                                 state.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                if matches!(state.field, tui::app::InsertField::KeyPath) {
+                                                // Salvar no último campo baseado no auth type
+                                                let should_save = if state.is_key_auth() {
+                                                    matches!(state.field, tui::app::InsertField::Passphrase)
+                                                } else {
+                                                    matches!(state.field, tui::app::InsertField::Password)
+                                                };
+
+                                                if should_save {
                                                     let name = state.name.clone();
                                                     let host = state.host.clone();
                                                     let port: u16 = state.port.parse().unwrap_or(22);
@@ -275,7 +296,14 @@ async fn main() -> Result<()> {
                                                 edit.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                if matches!(edit.field, tui::app::EditField::KeyPath) {
+                                                // Salvar no último campo baseado no auth type
+                                                let should_save = if edit.is_key_auth() {
+                                                    matches!(edit.field, tui::app::EditField::Passphrase)
+                                                } else {
+                                                    matches!(edit.field, tui::app::EditField::Password)
+                                                };
+
+                                                if should_save {
                                                     let index = edit.server_index;
                                                     let name = edit.name.clone();
                                                     let host = edit.host.clone();

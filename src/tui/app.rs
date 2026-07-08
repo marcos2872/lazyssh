@@ -12,6 +12,8 @@ pub enum EditField {
     User,
     AuthType,
     KeyPath,
+    Passphrase,
+    Password,
 }
 
 #[derive(Debug, Clone)]
@@ -23,14 +25,20 @@ pub struct EditState {
     pub user: String,
     pub auth_type: String,
     pub key_path: String,
+    pub passphrase: String,
+    pub password: String,
     pub server_index: usize,
 }
 
 impl EditState {
     pub fn from_server(server: &Server, index: usize) -> Self {
-        let (auth_type, key_path) = match &server.auth {
-            Auth::Key { path, .. } => ("key".to_string(), path.clone()),
-            Auth::Password { .. } => ("password".to_string(), String::new()),
+        let (auth_type, key_path, passphrase) = match &server.auth {
+            Auth::Key { path, passphrase } => (
+                "key".to_string(),
+                path.clone(),
+                passphrase.clone().unwrap_or_default(),
+            ),
+            Auth::Password { .. } => ("password".to_string(), String::new(), String::new()),
         };
         Self {
             field: EditField::Name,
@@ -40,8 +48,14 @@ impl EditState {
             user: server.user.clone(),
             auth_type,
             key_path,
+            passphrase,
+            password: String::new(),
             server_index: index,
         }
+    }
+
+    pub fn is_key_auth(&self) -> bool {
+        self.auth_type.to_lowercase() == "key"
     }
 
     pub fn current_value(&self) -> &str {
@@ -52,6 +66,8 @@ impl EditState {
             EditField::User => &self.user,
             EditField::AuthType => &self.auth_type,
             EditField::KeyPath => &self.key_path,
+            EditField::Passphrase => &self.passphrase,
+            EditField::Password => &self.password,
         }
     }
 
@@ -63,49 +79,78 @@ impl EditState {
             EditField::User => &mut self.user,
             EditField::AuthType => &mut self.auth_type,
             EditField::KeyPath => &mut self.key_path,
+            EditField::Passphrase => &mut self.passphrase,
+            EditField::Password => &mut self.password,
         }
     }
 
     pub fn next_field(&mut self) {
-        self.field = match self.field {
-            EditField::Name => EditField::Host,
-            EditField::Host => EditField::Port,
-            EditField::Port => EditField::User,
-            EditField::User => EditField::AuthType,
-            EditField::AuthType => EditField::KeyPath,
-            EditField::KeyPath => EditField::Name,
+        self.field = if self.is_key_auth() {
+            match self.field {
+                EditField::Name => EditField::Host,
+                EditField::Host => EditField::Port,
+                EditField::Port => EditField::User,
+                EditField::User => EditField::AuthType,
+                EditField::AuthType => EditField::KeyPath,
+                EditField::KeyPath => EditField::Passphrase,
+                EditField::Passphrase => EditField::Name,
+                _ => EditField::Name,
+            }
+        } else {
+            match self.field {
+                EditField::Name => EditField::Host,
+                EditField::Host => EditField::Port,
+                EditField::Port => EditField::User,
+                EditField::User => EditField::AuthType,
+                EditField::AuthType => EditField::Password,
+                EditField::Password => EditField::Name,
+                _ => EditField::Name,
+            }
         };
     }
 
     pub fn prev_field(&mut self) {
-        self.field = match self.field {
-            EditField::Name => EditField::KeyPath,
-            EditField::Host => EditField::Name,
-            EditField::Port => EditField::Host,
-            EditField::User => EditField::Port,
-            EditField::AuthType => EditField::User,
-            EditField::KeyPath => EditField::AuthType,
+        self.field = if self.is_key_auth() {
+            match self.field {
+                EditField::Name => EditField::Passphrase,
+                EditField::Host => EditField::Name,
+                EditField::Port => EditField::Host,
+                EditField::User => EditField::Port,
+                EditField::AuthType => EditField::User,
+                EditField::KeyPath => EditField::AuthType,
+                EditField::Passphrase => EditField::KeyPath,
+                _ => EditField::Name,
+            }
+        } else {
+            match self.field {
+                EditField::Name => EditField::Password,
+                EditField::Host => EditField::Name,
+                EditField::Port => EditField::Host,
+                EditField::User => EditField::Port,
+                EditField::AuthType => EditField::User,
+                EditField::Password => EditField::AuthType,
+                _ => EditField::Name,
+            }
         };
-    }
-
-    pub fn field_label(&self) -> &str {
-        match self.field {
-            EditField::Name => "Nome",
-            EditField::Host => "Host",
-            EditField::Port => "Porta",
-            EditField::User => "Usuário",
-            EditField::AuthType => "Auth (key/password)",
-            EditField::KeyPath => "Caminho chave",
-        }
     }
 
     pub fn build_auth(&self) -> Auth {
         if self.auth_type.to_lowercase() == "password" {
-            Auth::Password { vault_key: self.name.clone() }
+            Auth::Password {
+                vault_key: self.password.clone(),
+            }
         } else {
             Auth::Key {
-                path: if self.key_path.is_empty() { "~/.ssh/id_rsa".to_string() } else { self.key_path.clone() },
-                passphrase: None,
+                path: if self.key_path.is_empty() {
+                    "~/.ssh/id_rsa".to_string()
+                } else {
+                    self.key_path.clone()
+                },
+                passphrase: if self.passphrase.is_empty() {
+                    None
+                } else {
+                    Some(self.passphrase.clone())
+                },
             }
         }
     }
@@ -119,6 +164,8 @@ pub enum InsertField {
     User,
     AuthType,
     KeyPath,
+    Passphrase,
+    Password,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +177,8 @@ pub struct InsertState {
     pub user: String,
     pub auth_type: String,
     pub key_path: String,
+    pub passphrase: String,
+    pub password: String,
 }
 
 impl InsertState {
@@ -142,7 +191,13 @@ impl InsertState {
             user: "root".to_string(),
             auth_type: "key".to_string(),
             key_path: "~/.ssh/id_rsa".to_string(),
+            passphrase: String::new(),
+            password: String::new(),
         }
+    }
+
+    pub fn is_key_auth(&self) -> bool {
+        self.auth_type.to_lowercase() == "key"
     }
 
     pub fn current_value(&self) -> &str {
@@ -153,6 +208,8 @@ impl InsertState {
             InsertField::User => &self.user,
             InsertField::AuthType => &self.auth_type,
             InsertField::KeyPath => &self.key_path,
+            InsertField::Passphrase => &self.passphrase,
+            InsertField::Password => &self.password,
         }
     }
 
@@ -164,49 +221,78 @@ impl InsertState {
             InsertField::User => &mut self.user,
             InsertField::AuthType => &mut self.auth_type,
             InsertField::KeyPath => &mut self.key_path,
+            InsertField::Passphrase => &mut self.passphrase,
+            InsertField::Password => &mut self.password,
         }
     }
 
     pub fn next_field(&mut self) {
-        self.field = match self.field {
-            InsertField::Name => InsertField::Host,
-            InsertField::Host => InsertField::Port,
-            InsertField::Port => InsertField::User,
-            InsertField::User => InsertField::AuthType,
-            InsertField::AuthType => InsertField::KeyPath,
-            InsertField::KeyPath => InsertField::Name,
+        self.field = if self.is_key_auth() {
+            match self.field {
+                InsertField::Name => InsertField::Host,
+                InsertField::Host => InsertField::Port,
+                InsertField::Port => InsertField::User,
+                InsertField::User => InsertField::AuthType,
+                InsertField::AuthType => InsertField::KeyPath,
+                InsertField::KeyPath => InsertField::Passphrase,
+                InsertField::Passphrase => InsertField::Name,
+                _ => InsertField::Name,
+            }
+        } else {
+            match self.field {
+                InsertField::Name => InsertField::Host,
+                InsertField::Host => InsertField::Port,
+                InsertField::Port => InsertField::User,
+                InsertField::User => InsertField::AuthType,
+                InsertField::AuthType => InsertField::Password,
+                InsertField::Password => InsertField::Name,
+                _ => InsertField::Name,
+            }
         };
     }
 
     pub fn prev_field(&mut self) {
-        self.field = match self.field {
-            InsertField::Name => InsertField::KeyPath,
-            InsertField::Host => InsertField::Name,
-            InsertField::Port => InsertField::Host,
-            InsertField::User => InsertField::Port,
-            InsertField::AuthType => InsertField::User,
-            InsertField::KeyPath => InsertField::AuthType,
+        self.field = if self.is_key_auth() {
+            match self.field {
+                InsertField::Name => InsertField::Passphrase,
+                InsertField::Host => InsertField::Name,
+                InsertField::Port => InsertField::Host,
+                InsertField::User => InsertField::Port,
+                InsertField::AuthType => InsertField::User,
+                InsertField::KeyPath => InsertField::AuthType,
+                InsertField::Passphrase => InsertField::KeyPath,
+                _ => InsertField::Name,
+            }
+        } else {
+            match self.field {
+                InsertField::Name => InsertField::Password,
+                InsertField::Host => InsertField::Name,
+                InsertField::Port => InsertField::Host,
+                InsertField::User => InsertField::Port,
+                InsertField::AuthType => InsertField::User,
+                InsertField::Password => InsertField::AuthType,
+                _ => InsertField::Name,
+            }
         };
-    }
-
-    pub fn field_label(&self) -> &str {
-        match self.field {
-            InsertField::Name => "Nome",
-            InsertField::Host => "Host",
-            InsertField::Port => "Porta",
-            InsertField::User => "Usuário",
-            InsertField::AuthType => "Auth (key/password)",
-            InsertField::KeyPath => "Caminho chave",
-        }
     }
 
     pub fn build_auth(&self) -> Auth {
         if self.auth_type.to_lowercase() == "password" {
-            Auth::Password { vault_key: self.name.clone() }
+            Auth::Password {
+                vault_key: self.password.clone(),
+            }
         } else {
             Auth::Key {
-                path: if self.key_path.is_empty() { "~/.ssh/id_rsa".to_string() } else { self.key_path.clone() },
-                passphrase: None,
+                path: if self.key_path.is_empty() {
+                    "~/.ssh/id_rsa".to_string()
+                } else {
+                    self.key_path.clone()
+                },
+                passphrase: if self.passphrase.is_empty() {
+                    None
+                } else {
+                    Some(self.passphrase.clone())
+                },
             }
         }
     }
@@ -295,12 +381,19 @@ impl App {
             self.filtered_indices = (0..self.servers.len()).collect();
         } else {
             let matcher = SkimMatcherV2::default();
-            self.filtered_indices = self.servers.iter()
+            self.filtered_indices = self
+                .servers
+                .iter()
                 .enumerate()
                 .filter_map(|(i, s)| {
-                    let score = matcher.fuzzy_match(&s.name, query)
+                    let score = matcher
+                        .fuzzy_match(&s.name, query)
                         .or_else(|| matcher.fuzzy_match(&s.host, query))
-                        .or_else(|| s.tags.iter().find_map(|t| matcher.fuzzy_match(t, query)));
+                        .or_else(|| {
+                            s.tags
+                                .iter()
+                                .find_map(|t| matcher.fuzzy_match(t, query))
+                        });
                     score.map(|_| i)
                 })
                 .collect();
@@ -319,9 +412,7 @@ impl App {
     }
 
     pub fn connect_ssh(&mut self) {
-        let server_name = self
-            .selected_server()
-            .map(|s| s.name.clone());
+        let server_name = self.selected_server().map(|s| s.name.clone());
         if let Some(name) = server_name {
             self.current_view = CurrentView::SshTerminal;
             self.ssh_state = Some(SshTerminalState::new(name));
@@ -346,7 +437,10 @@ mod tests {
                 host: "192.168.1.1".to_string(),
                 port: 22,
                 user: "user".to_string(),
-                auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
+                auth: Auth::Key {
+                    path: "~/.ssh/id_rsa".to_string(),
+                    passphrase: None,
+                },
                 tags: vec!["prod".to_string()],
                 pinned: false,
             },
@@ -355,7 +449,9 @@ mod tests {
                 host: "192.168.1.2".to_string(),
                 port: 22,
                 user: "user".to_string(),
-                auth: Auth::Password { vault_key: "key".to_string() },
+                auth: Auth::Password {
+                    vault_key: "key".to_string(),
+                },
                 tags: vec!["dev".to_string()],
                 pinned: true,
             },
