@@ -537,39 +537,31 @@ async fn main() -> Result<()> {
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
                             // Clique na lista de servidores
+                            // Layout: linha 0 = search bar, linha 1+ = lista de servidores
                             if matches!(app.current_view, tui::app::CurrentView::ServerList)
                                 && app.insert_state.is_none()
                                 && app.edit_state.is_none()
                             {
-                                let list_area = Rect::new(0, 3, 200, 100); // Área aproximada da lista
-                                if mouse.column >= list_area.x
-                                    && mouse.column < list_area.x + list_area.width
-                                    && mouse.row >= list_area.y + 1
-                                    && mouse.row < list_area.y + 1 + app.servers.len() as u16
-                                {
-                                    let clicked_index = (mouse.row - list_area.y - 1) as usize;
+                                // Ignorar cliques na barra de busca (row 0-2)
+                                if mouse.row >= 4 {
+                                    let clicked_index = (mouse.row - 4) as usize;
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
                                     }
                                 }
                             }
-                            // Duplo clique para conectar
+                        }
+                        MouseEventKind::Down(MouseButton::Right) => {
+                            // Duplo clique direito para conectar
                             if matches!(app.current_view, tui::app::CurrentView::ServerList)
                                 && app.insert_state.is_none()
                                 && app.edit_state.is_none()
                             {
-                                if let Some(_server) = app.selected_server() {
-                                    // Verificar se clicou na mesma linha do servidor selecionado
-                                    let list_area = Rect::new(0, 3, 200, 100);
-                                    if mouse.column >= list_area.x
-                                        && mouse.column < list_area.x + list_area.width
-                                        && mouse.row >= list_area.y + 1
-                                        && mouse.row < list_area.y + 1 + app.servers.len() as u16
-                                    {
-                                        let clicked_index = (mouse.row - list_area.y - 1) as usize;
-                                        if clicked_index == app.selected {
-                                            app.connect_ssh();
-                                        }
+                                if mouse.row >= 4 {
+                                    let clicked_index = (mouse.row - 4) as usize;
+                                    if clicked_index < app.filtered_indices.len() {
+                                        app.selected = clicked_index;
+                                        app.connect_ssh();
                                     }
                                 }
                             }
