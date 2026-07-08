@@ -1,4 +1,6 @@
 use crate::config::models::Server;
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use super::sftp_browser::SftpState;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,19 +215,15 @@ impl App {
         if query.is_empty() {
             self.filtered_indices = (0..self.servers.len()).collect();
         } else {
-            let query_lower = query.to_lowercase();
-            self.filtered_indices = self
-                .servers
-                .iter()
+            let matcher = SkimMatcherV2::default();
+            self.filtered_indices = self.servers.iter()
                 .enumerate()
-                .filter(|(_, s)| {
-                    s.name.to_lowercase().contains(&query_lower)
-                        || s.host.to_lowercase().contains(&query_lower)
-                        || s.tags
-                            .iter()
-                            .any(|t| t.to_lowercase().contains(&query_lower))
+                .filter_map(|(i, s)| {
+                    let score = matcher.fuzzy_match(&s.name, query)
+                        .or_else(|| matcher.fuzzy_match(&s.host, query))
+                        .or_else(|| s.tags.iter().find_map(|t| matcher.fuzzy_match(t, query)));
+                    score.map(|_| i)
                 })
-                .map(|(i, _)| i)
                 .collect();
         }
         self.selected = 0;
