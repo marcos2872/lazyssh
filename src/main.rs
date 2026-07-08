@@ -170,6 +170,10 @@ async fn main() -> Result<()> {
                                     KeyCode::Char('p') => {
                                         if let Some(server) = app.selected_server_mut() {
                                             server.pinned = !server.pinned;
+                                            let _ = config::save_config(
+                                                &config::AppConfig { servers: app.servers.clone() },
+                                                &config::get_config_path(),
+                                            );
                                         }
                                     }
                                     KeyCode::Char('d') => {
