@@ -1,5 +1,3 @@
-pub mod config;
-
 use anyhow::Result;
 
 #[tokio::main]
