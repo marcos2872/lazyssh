@@ -15,6 +15,14 @@ pub enum SshStatus {
     Disconnected,
 }
 
+#[derive(Debug, Clone)]
+pub struct Selection {
+    pub start_row: usize,
+    pub start_col: usize,
+    pub end_row: usize,
+    pub end_col: usize,
+}
+
 #[derive(Debug)]
 pub struct SshTerminalState {
     pub server_name: String,
@@ -25,6 +33,8 @@ pub struct SshTerminalState {
     pub scroll_offset: usize,
     pub status: SshStatus,
     pub session_id: Option<String>,
+    pub selection: Option<Selection>,
+    pub is_selecting: bool,
 }
 
 impl SshTerminalState {
@@ -39,6 +49,8 @@ impl SshTerminalState {
             scroll_offset: 0,
             status: SshStatus::Connecting,
             session_id: None,
+            selection: None,
+            is_selecting: false,
         }
     }
 
@@ -124,6 +136,108 @@ impl SshTerminalState {
         self.scroll_offset = 0;
     }
 
+    pub fn start_selection(&mut self, row: usize, col: usize) {
+        self.is_selecting = true;
+        self.selection = Some(Selection {
+            start_row: row,
+            start_col: col,
+            end_row: row,
+            end_col: col,
+        });
+    }
+
+    pub fn update_selection(&mut self, row: usize, col: usize) {
+        if let Some(sel) = &mut self.selection {
+            sel.end_row = row;
+            sel.end_col = col;
+        }
+    }
+
+    pub fn end_selection(&mut self) {
+        self.is_selecting = false;
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection = None;
+        self.is_selecting = false;
+    }
+
+    pub fn get_selected_text(&self) -> Option<String> {
+        let sel = self.selection.as_ref()?;
+        let lines = &self.output;
+
+        let start_row = sel.start_row.min(sel.end_row);
+        let end_row = sel.start_row.max(sel.end_row);
+        let start_col = if sel.start_row <= sel.end_row { sel.start_col } else { sel.end_col };
+        let end_col = if sel.start_row <= sel.end_row { sel.end_col } else { sel.start_col };
+
+        let mut selected = String::new();
+
+        for i in start_row..=end_row.min(lines.len().saturating_sub(1)) {
+            let line = &lines[i];
+            let line_chars: Vec<char> = line.chars().collect();
+            let line_len = line_chars.len();
+
+            let col_start = if i == start_row { start_col.min(line_len) } else { 0 };
+            let col_end = if i == end_row { end_col.min(line_len) } else { line_len };
+
+            if col_start < line_len && col_end > col_start {
+                let selected_part: String = line_chars[col_start..col_end].iter().collect();
+                if !selected.is_empty() {
+                    selected.push('\n');
+                }
+                selected.push_str(&selected_part);
+            }
+        }
+
+        if selected.is_empty() {
+            None
+        } else {
+            Some(selected)
+        }
+    }
+
+    pub fn copy_selection_to_clipboard(&self) -> bool {
+        if let Some(text) = self.get_selected_text() {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                clipboard.set_text(&text).is_ok()
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn is_selected(&self, row: usize, col: usize) -> bool {
+        if let Some(sel) = &self.selection {
+            let start_row = sel.start_row.min(sel.end_row);
+            let end_row = sel.start_row.max(sel.end_row);
+
+            if row < start_row || row > end_row {
+                return false;
+            }
+
+            let (start_col, end_col) = if sel.start_row <= sel.end_row {
+                (sel.start_col, sel.end_col)
+            } else {
+                (sel.end_col, sel.start_col)
+            };
+
+            if row == start_row && row == end_row {
+                col >= start_col && col < end_col
+            } else if row == start_row {
+                col >= start_col
+            } else if row == end_row {
+                col < end_col
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    }
+
     pub fn prompt(&self) -> String {
         if let Some(server) = &self.server {
             format!("{}@{}:~$ ", server.user, server.host)
@@ -154,7 +268,7 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
     // Espaço útil = total - bordas(2) - linha do prompt(1)
     let usable_height = area.height.saturating_sub(3) as usize;
 
-    // Construir linhas do output com scroll
+    // Construir linhas do output com scroll e seleção
     let mut output_lines: Vec<Line> = vec![];
     let total_output = state.output.len();
 
@@ -170,7 +284,27 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
     let start_idx = end_idx.saturating_sub(lines_to_show);
 
     for i in start_idx..end_idx {
-        output_lines.push(Line::from(Span::raw(&state.output[i])));
+        let line = &state.output[i];
+        let line_chars: Vec<char> = line.chars().collect();
+        let mut spans = vec![];
+
+        // Renderizar caractere por caractere para suportar seleção
+        for (col, &ch) in line_chars.iter().enumerate() {
+            let is_selected = state.is_selected(i, col);
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::White)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            spans.push(Span::styled(ch.to_string(), style));
+        }
+
+        // Se a linha for menor que a largura da tela, preencher com espaços selecionados
+        if line_chars.is_empty() {
+            spans.push(Span::raw(""));
+        }
+
+        output_lines.push(Line::from(spans));
     }
 
     // Adicionar linhas vazias para preencher se output for menor que altura
@@ -230,18 +364,25 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState) {
         }
     }
 
-    // Indicador de scroll
-    let scroll_indicator = if state.scroll_offset > 0 {
-        format!(" [↑{}]", state.scroll_offset)
-    } else {
+    // Indicador de scroll e seleção
+    let mut indicators = vec![];
+    if state.scroll_offset > 0 {
+        indicators.push(format!("↑{}", state.scroll_offset));
+    }
+    if state.selection.is_some() {
+        indicators.push("📋".to_string());
+    }
+    let indicator_str = if indicators.is_empty() {
         String::new()
+    } else {
+        format!(" [{}]", indicators.join(" "))
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(
             " {} [{}]{} ",
-            state.server_name, status_text, scroll_indicator
+            state.server_name, status_text, indicator_str
         ))
         .title_style(Style::default().fg(status_color));
 

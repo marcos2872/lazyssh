@@ -506,7 +506,7 @@ async fn main() -> Result<()> {
                 }
                 }
 
-                // Tratar eventos do mouse (scroll e cliques)
+                // Tratar eventos do mouse (scroll, cliques e seleção)
                 Event::Mouse(mouse) => {
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
@@ -536,17 +536,51 @@ async fn main() -> Result<()> {
                             }
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
+                            // Iniciar seleção no terminal SSH
+                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                                if let Some(ssh) = &mut app.ssh_state {
+                                    // Calcular linha relativa ao output
+                                    let row = mouse.row as usize;
+                                    let col = mouse.column as usize;
+                                    if row > 0 && row <= ssh.output.len() {
+                                        ssh.start_selection(row - 1, col);
+                                    }
+                                }
+                            }
                             // Clique na lista de servidores
-                            // Layout: linha 0 = search bar, linha 1+ = lista de servidores
                             if matches!(app.current_view, tui::app::CurrentView::ServerList)
                                 && app.insert_state.is_none()
                                 && app.edit_state.is_none()
                             {
-                                // Ignorar cliques na barra de busca (row 0-2)
                                 if mouse.row >= 4 {
                                     let clicked_index = (mouse.row - 4) as usize;
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
+                                    }
+                                }
+                            }
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            // Atualizar seleção no terminal SSH
+                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                                if let Some(ssh) = &mut app.ssh_state {
+                                    let row = mouse.row as usize;
+                                    let col = mouse.column as usize;
+                                    if row > 0 && row <= ssh.output.len() {
+                                        ssh.update_selection(row - 1, col);
+                                    }
+                                }
+                            }
+                        }
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            // Finalizar seleção e copiar
+                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
+                                if let Some(ssh) = &mut app.ssh_state {
+                                    ssh.end_selection();
+                                    if ssh.selection.is_some() {
+                                        if ssh.copy_selection_to_clipboard() {
+                                            app.notifications.success("Texto copiado para área de transferência!");
+                                        }
                                     }
                                 }
                             }
