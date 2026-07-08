@@ -18,8 +18,14 @@ impl RemoteFs {
     }
 
     pub fn with_server(server: Server) -> Self {
+        // Obter o diretório home do usuário
+        let home_dir = execute_ssh_command(&server, "echo $HOME")
+            .unwrap_or_else(|_| "/root".to_string())
+            .trim()
+            .to_string();
+
         Self {
-            current_dir: "~".to_string(),
+            current_dir: home_dir,
             server: Some(server),
         }
     }

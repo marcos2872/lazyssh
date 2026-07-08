@@ -198,7 +198,7 @@ fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
     let is_focused = state.focus_side == Side::Local;
 
     let title = format!(
-        " 📁 Local: {} {}",
+        " [L] Local: {} {}",
         state.local.current_dir().display(),
         if is_focused { "[FOCUS]" } else { "" }
     );
@@ -208,9 +208,9 @@ fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
         .iter()
         .map(|file| {
             let (icon, style) = if file.is_dir {
-                ("📁 ", Style::default().fg(Theme::primary()))
+                ("/ ", Style::default().fg(Theme::primary()))
             } else {
-                ("📄 ", Style::default().fg(Theme::text()))
+                ("  ", Style::default().fg(Theme::text()))
             };
 
             let size_str = if file.is_dir {
@@ -257,7 +257,7 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
     let is_focused = state.focus_side == Side::Remote;
 
     let title = format!(
-        " 🌐 Remote: {} {}",
+        " [R] Remote: {} {}",
         state.remote.current_dir(),
         if is_focused { "[FOCUS]" } else { "" }
     );
@@ -267,9 +267,9 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
         .iter()
         .map(|file| {
             let (icon, style) = if file.is_dir {
-                ("📁 ", Style::default().fg(Theme::primary()))
+                ("/ ", Style::default().fg(Theme::primary()))
             } else {
-                ("📄 ", Style::default().fg(Theme::text()))
+                ("  ", Style::default().fg(Theme::text()))
             };
 
             let size_str = if file.is_dir {
@@ -315,22 +315,22 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
 fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
     let help_text = Line::from(vec![
         Span::styled(" Tab: trocar painel ", Style::default().fg(Theme::primary())),
-        Span::styled("│ ", Style::default().fg(Theme::text_dim())),
+        Span::styled("| ", Style::default().fg(Theme::text_dim())),
         Span::styled("Enter: entrar pasta ", Style::default().fg(Theme::success())),
-        Span::styled("│ ", Style::default().fg(Theme::text_dim())),
+        Span::styled("| ", Style::default().fg(Theme::text_dim())),
         Span::styled("Backspace: voltar ", Style::default().fg(Theme::warning())),
-        Span::styled("│ ", Style::default().fg(Theme::text_dim())),
+        Span::styled("| ", Style::default().fg(Theme::text_dim())),
         Span::styled("u: upload ", Style::default().fg(Theme::success())),
-        Span::styled("│ ", Style::default().fg(Theme::text_dim())),
+        Span::styled("| ", Style::default().fg(Theme::text_dim())),
         Span::styled("d: download ", Style::default().fg(Theme::primary())),
-        Span::styled("│ ", Style::default().fg(Theme::text_dim())),
+        Span::styled("| ", Style::default().fg(Theme::text_dim())),
         Span::styled("q: sair", Style::default().fg(Theme::error())),
     ]);
 
     let status = Paragraph::new(help_text).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" 📋 SFTP ")
+            .title(" SFTP ")
             .title_style(Theme::title_style())
             .border_style(Theme::border_style()),
     );
