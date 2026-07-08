@@ -71,6 +71,17 @@ async fn main() -> Result<()> {
                                             server.pinned = !server.pinned;
                                         }
                                     }
+                                    KeyCode::Char('d') => {
+                                        if let Some(server) = app.selected_server() {
+                                            let name = server.name.clone();
+                                            app.servers.retain(|s| s.name != name);
+                                            app.filter(&app.input.clone());
+                                            let _ = config::save_config(
+                                                &config::AppConfig { servers: app.servers.clone() },
+                                                &config::get_config_path(),
+                                            );
+                                        }
+                                    }
                                     KeyCode::Char('s') => app.open_sftp(),
                                     KeyCode::Enter => {
                                         if let Some(_server) = app.selected_server() {
