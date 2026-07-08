@@ -85,19 +85,46 @@ async fn main() -> Result<()> {
                         let input = ratatui::widgets::Paragraph::new(lines)
                             .block(block);
                         f.render_widget(input, rect);
-                    } else if app.input_mode == tui::app::InputMode::Edit {
+                    } else if let Some(ref edit) = app.edit_state {
                         let area = f.area();
-                        let popup = ratatui::widgets::Block::default()
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .title("Editar Nome");
-                        let input = ratatui::widgets::Paragraph::new(app.input.as_str())
-                            .block(popup);
                         let rect = ratatui::layout::Rect::new(
                             area.width / 4,
-                            area.height / 2 - 2,
+                            area.height / 2 - 5,
                             area.width / 2,
-                            3,
+                            12,
                         );
+
+                        let mut lines = vec![];
+                        let fields = [
+                            (tui::app::EditField::Name, "Nome"),
+                            (tui::app::EditField::Host, "Host"),
+                            (tui::app::EditField::Port, "Porta"),
+                            (tui::app::EditField::User, "Usuário"),
+                        ];
+
+                        for (field_type, label) in &fields {
+                            let value = match field_type {
+                                tui::app::EditField::Name => &edit.name,
+                                tui::app::EditField::Host => &edit.host,
+                                tui::app::EditField::Port => &edit.port,
+                                tui::app::EditField::User => &edit.user,
+                            };
+                            let marker = if &edit.field == field_type { "▶" } else { " " };
+                            let line = format!("{} {}: {}", marker, label, value);
+                            lines.push(ratatui::text::Line::from(line));
+                        }
+
+                        lines.push(ratatui::text::Line::from(""));
+                        lines.push(ratatui::text::Line::from("Tab: próximo campo"));
+                        lines.push(ratatui::text::Line::from("Enter: salvar"));
+                        lines.push(ratatui::text::Line::from("Esc: cancelar"));
+
+                        let block = ratatui::widgets::Block::default()
+                            .borders(ratatui::widgets::Borders::ALL)
+                            .title("Editar Servidor");
+
+                        let input = ratatui::widgets::Paragraph::new(lines)
+                            .block(block);
                         f.render_widget(input, rect);
                     }
                 }
@@ -130,7 +157,8 @@ async fn main() -> Result<()> {
                                     }
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
-                                            app.input = server.name.clone();
+                                            let index = app.filtered_indices[app.selected];
+                                            app.edit_state = Some(tui::app::EditState::from_server(server, index));
                                             app.input_mode = tui::app::InputMode::Edit;
                                         }
                                     }
@@ -210,33 +238,48 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 },
-                                tui::app::InputMode::Edit => match key.code {
-                                    KeyCode::Esc => {
-                                        app.input_mode = tui::app::InputMode::Normal;
-                                        app.input.clear();
-                                    }
-                                    KeyCode::Char(c) => {
-                                        app.input.push(c);
-                                    }
-                                    KeyCode::Backspace => {
-                                        app.input.pop();
-                                    }
-                                    KeyCode::Enter => {
-                                        let new_name = app.input.clone();
-                                        if !new_name.is_empty() {
-                                            if let Some(server) = app.selected_server_mut() {
-                                                server.name = new_name;
-                                                let _ = config::save_config(
-                                                    &config::AppConfig { servers: app.servers.clone() },
-                                                    &config::get_config_path(),
-                                                );
+                                tui::app::InputMode::Edit => {
+                                    if let Some(ref mut edit) = app.edit_state {
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                app.input_mode = tui::app::InputMode::Normal;
+                                                app.edit_state = None;
                                             }
+                                            KeyCode::Tab => {
+                                                edit.next_field();
+                                            }
+                                            KeyCode::Char(c) => {
+                                                edit.current_value_mut().push(c);
+                                            }
+                                            KeyCode::Backspace => {
+                                                edit.current_value_mut().pop();
+                                            }
+                                            KeyCode::Enter => {
+                                                if matches!(edit.field, tui::app::EditField::User) {
+                                                    let index = edit.server_index;
+                                                    let name = edit.name.clone();
+                                                    let host = edit.host.clone();
+                                                    let port: u16 = edit.port.parse().unwrap_or(22);
+                                                    let user = edit.user.clone();
+
+                                                    if let Some(server) = app.servers.get_mut(index) {
+                                                        server.name = name;
+                                                        server.host = host;
+                                                        server.port = port;
+                                                        server.user = user;
+                                                        let _ = config::save_config(
+                                                            &config::AppConfig { servers: app.servers.clone() },
+                                                            &config::get_config_path(),
+                                                        );
+                                                    }
+                                                    app.input_mode = tui::app::InputMode::Normal;
+                                                    app.edit_state = None;
+                                                }
+                                            }
+                                            _ => {}
                                         }
-                                        app.input_mode = tui::app::InputMode::Normal;
-                                        app.input.clear();
                                     }
-                                    _ => {}
-                                },
+                                }
                                 tui::app::InputMode::Search => match key.code {
                                     KeyCode::Enter => app.input_mode = tui::app::InputMode::Normal,
                                     KeyCode::Esc => {

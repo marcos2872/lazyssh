@@ -2,6 +2,73 @@ use crate::config::models::Server;
 use super::sftp_browser::SftpState;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum EditField {
+    Name,
+    Host,
+    Port,
+    User,
+}
+
+#[derive(Debug, Clone)]
+pub struct EditState {
+    pub field: EditField,
+    pub name: String,
+    pub host: String,
+    pub port: String,
+    pub user: String,
+    pub server_index: usize,
+}
+
+impl EditState {
+    pub fn from_server(server: &Server, index: usize) -> Self {
+        Self {
+            field: EditField::Name,
+            name: server.name.clone(),
+            host: server.host.clone(),
+            port: server.port.to_string(),
+            user: server.user.clone(),
+            server_index: index,
+        }
+    }
+
+    pub fn current_value(&self) -> &str {
+        match self.field {
+            EditField::Name => &self.name,
+            EditField::Host => &self.host,
+            EditField::Port => &self.port,
+            EditField::User => &self.user,
+        }
+    }
+
+    pub fn current_value_mut(&mut self) -> &mut String {
+        match self.field {
+            EditField::Name => &mut self.name,
+            EditField::Host => &mut self.host,
+            EditField::Port => &mut self.port,
+            EditField::User => &mut self.user,
+        }
+    }
+
+    pub fn next_field(&mut self) {
+        self.field = match self.field {
+            EditField::Name => EditField::Host,
+            EditField::Host => EditField::Port,
+            EditField::Port => EditField::User,
+            EditField::User => EditField::Name,
+        };
+    }
+
+    pub fn field_label(&self) -> &str {
+        match self.field {
+            EditField::Name => "Nome",
+            EditField::Host => "Host",
+            EditField::Port => "Porta",
+            EditField::User => "Usuário",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum InsertField {
     Name,
     Host,
@@ -92,6 +159,7 @@ pub struct App {
     pub should_quit: bool,
     pub sftp_state: Option<SftpState>,
     pub insert_state: Option<InsertState>,
+    pub edit_state: Option<EditState>,
 }
 
 impl App {
@@ -107,6 +175,7 @@ impl App {
             should_quit: false,
             sftp_state: None,
             insert_state: None,
+            edit_state: None,
         }
     }
 
