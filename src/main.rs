@@ -18,6 +18,15 @@ use std::io;
 
 use tui::{render_server_list, App};
 
+struct CleanupGuard;
+
+impl Drop for CleanupGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Setup terminal
@@ -26,6 +35,7 @@ async fn main() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    let _guard = CleanupGuard;
 
     // Load config
     let config = config::load_or_default();
@@ -53,8 +63,8 @@ async fn main() -> Result<()> {
                                 app.input.clear();
                             }
                             KeyCode::Enter => {
-                                if let Some(server) = app.selected_server() {
-                                    println!("Connecting to {}...", server.name);
+                                if let Some(_server) = app.selected_server() {
+                                    // TODO: Open SSH terminal view
                                     app.should_quit = true;
                                 }
                             }
@@ -89,15 +99,6 @@ async fn main() -> Result<()> {
             break;
         }
     }
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
 
     Ok(())
 }
