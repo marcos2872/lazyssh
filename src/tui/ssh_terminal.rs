@@ -73,10 +73,36 @@ impl SshTerminalState {
     }
 
     /// Processa texto recebido do PTY caractere por caractere,
-    /// tratando `\r`, `\n`, `\b` para construir as linhas corretamente.
+    /// tratando `\r`, `\n`, `\b` e CSI clear sequences (`[2J`, `[J`).
     pub fn feed_output(&mut self, text: &str) {
         let mut chars = text.chars().peekable();
         while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                if chars.peek() == Some(&'[') {
+                    chars.next(); // consume '['
+                    // Collect CSI parameters until a command letter
+                    let mut params = String::new();
+                    let terminator = loop {
+                        match chars.next() {
+                            Some(t) if ('@'..='~').contains(&t) => break t,
+                            Some(p) => params.push(p),
+                            None => break '\0',
+                        }
+                    };
+                    match terminator {
+                        'J' if params.is_empty() || params == "0" => {
+                            self.current_line.clear();
+                        }
+                        'J' if params == "2" || params == "3" => {
+                            self.output.clear();
+                            self.current_line.clear();
+                        }
+                        _ => {} // all other CSI: discard silently
+                    }
+                    continue; // skip pushing raw characters to current_line
+                }
+                // bare ESC (not followed by '['): fall through to push
+            }
             match ch {
                 '\r' => {
                     // Salva linha atual no histórico
@@ -614,5 +640,69 @@ mod tests {
         assert_eq!(segments_text(&r), "rednormal");
         assert_eq!(r[0].1.fg, Some(Color::Red));
         assert_eq!(r[1].1.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn test_feed_output_clear_screen() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "test".into(),
+            host: "test".into(),
+            port: 22,
+            user: "test".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![],
+            pinned: false,
+        });
+        state.feed_output("before\x1b[2Jafter");
+        assert!(state.output.is_empty(), "[2J should clear output");
+        assert_eq!(state.current_line, "after", "text after [2J goes to current_line");
+    }
+
+    #[test]
+    fn test_feed_output_erase_display() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "test".into(),
+            host: "test".into(),
+            port: 22,
+            user: "test".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![],
+            pinned: false,
+        });
+        state.feed_output("line1\rline2\r\x1b[2J\x1b[Hclean");
+        assert!(state.output.is_empty(), "output should be cleared");
+        assert_eq!(state.current_line, "clean", "text after sequences goes to current_line");
+    }
+
+    #[test]
+    fn test_feed_output_erase_from_cursor() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "test".into(),
+            host: "test".into(),
+            port: 22,
+            user: "test".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![],
+            pinned: false,
+        });
+        state.feed_output("keep\r");
+        assert!(!state.output.is_empty(), "\\r should push line to output");
+        state.feed_output("\x1b[Jmore");
+        assert_eq!(state.current_line, "more", "[J should clear then new text appears");
+    }
+
+    #[test]
+    fn test_feed_output_ignore_non_clear_csi() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "test".into(),
+            host: "test".into(),
+            port: 22,
+            user: "test".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![],
+            pinned: false,
+        });
+        state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
+        assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
     }
 }

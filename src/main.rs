@@ -95,6 +95,8 @@ async fn main() -> Result<()> {
                     ssh.flush_output();
                     ssh.set_disconnected();
                 }
+                app.current_view = tui::app::CurrentView::ServerList;
+                app.ssh_state = None;
                 app.notifications.info("Conexão SSH encerrada.");
             }
         }
@@ -803,8 +805,10 @@ async fn main() -> Result<()> {
                         }
                         tui::app::CurrentView::SshTerminal => {
                             if let Some(ssh) = &mut app.ssh_state {
-                                // Ctrl+Q to disconnect and go back to server list
-                                if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q') {
+                                // Ctrl+Q or Esc to disconnect and go back to server list
+                                if (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q'))
+                                    || key.code == KeyCode::Esc
+                                {
                                     app.close_ssh();
                                 } else if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
                                     match key.code {
