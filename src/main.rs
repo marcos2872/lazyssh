@@ -12,7 +12,6 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::Rect,
     Terminal,
 };
 use std::{
@@ -391,7 +390,6 @@ async fn main() -> Result<()> {
                         render_ssh_terminal(f, ssh);
                     }
                 }
-                _ => {}
             }
 
             // Renderizar notificações por cima de tudo
@@ -909,7 +907,6 @@ async fn main() -> Result<()> {
                                 }
                             }
                         }
-                        _ => {}
                     }
                 }
                 }
