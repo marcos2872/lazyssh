@@ -21,7 +21,6 @@ impl Handler for SshClient {
         _server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
         // TODO: Implement known_hosts verification before production use
-        eprintln!("WARNING: Host key verification not implemented - vulnerable to MITM attacks");
         Ok(true)
     }
 }
@@ -124,7 +123,7 @@ impl SshSession {
             channel.request_shell(true).await?;
         }
 
-        let (data_tx, _data_rx) = mpsc::channel::<Vec<u8>>(256);
+        let (data_tx, data_rx) = mpsc::channel::<Vec<u8>>(256);
         let (event_tx, event_rx) = mpsc::channel::<ShellEvent>(64);
 
         // Convert channel into a stream (consumes channel)
@@ -158,6 +157,7 @@ impl SshSession {
 
         Ok(ShellChannel {
             writer: Arc::new(Mutex::new(Box::new(writer))),
+            data_rx: Arc::new(Mutex::new(data_rx)),
             event_rx: Arc::new(Mutex::new(event_rx)),
         })
     }
@@ -232,7 +232,8 @@ pub enum ShellEvent {
 
 /// Handle to an interactive shell channel.
 pub struct ShellChannel {
-    writer: Arc<Mutex<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>,
+    pub writer: Arc<Mutex<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>,
+    pub data_rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
     event_rx: Arc<Mutex<mpsc::Receiver<ShellEvent>>>,
 }
 
@@ -271,6 +272,15 @@ impl SshService {
         let id = session.id.clone();
         self.sessions.insert(id.clone(), session);
         Ok(id)
+    }
+
+    /// Open an interactive shell on an existing session.
+    pub async fn open_shell(&mut self, session_id: &str, use_pty: bool) -> Result<ShellChannel> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        session.open_shell(use_pty).await
     }
 
     /// Get a reference to a session by ID.

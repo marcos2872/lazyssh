@@ -1,8 +1,9 @@
 use crate::config::models::{Auth, Server};
-use crate::ssh::{execute_ssh_command, SshService};
-use crate::sftp::SftpService;
+use crate::ssh::SshService;
+use crate::sftp::{FileInfo, SftpService};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use tokio::sync::mpsc;
 use super::effects::AppEffects;
 use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
@@ -333,6 +334,7 @@ pub struct App {
     pub effects: AppEffects,
     pub ssh_service: SshService,
     pub sftp_service: SftpService,
+    pub ssh_output_rx: Option<mpsc::UnboundedReceiver<String>>,
 }
 
 impl App {
@@ -360,6 +362,7 @@ impl App {
             effects: AppEffects::new(),
             ssh_service: SshService::new(),
             sftp_service: SftpService::new(),
+            ssh_output_rx: None,
         }
     }
 
@@ -434,8 +437,21 @@ impl App {
             match result {
                 Ok(session_id) => {
                     self.current_view = CurrentView::SftpBrowser;
-                    let mut state = SftpState::new(server);
-                    state.session_id = Some(session_id);
+                    let mut state = SftpState::new(server.clone());
+                    state.session_id = Some(session_id.clone());
+
+                    // List initial remote directory
+                    let list_result = self.sftp_list_remote_dir(&session_id, &state.remote_path);
+                    match list_result {
+                        Ok(files) => {
+                            state.refresh_remote(files);
+                            state.status = "Conectado".to_string();
+                        }
+                        Err(e) => {
+                            state.status = format!("Erro: {}", e);
+                        }
+                    }
+
                     self.sftp_state = Some(state);
                     self.notifications.info("SFTP conectado!");
                 }
@@ -445,6 +461,54 @@ impl App {
                 }
             }
         }
+    }
+
+    /// List a remote directory via SFTP service.
+    pub fn sftp_list_remote_dir(&self, session_id: &str, path: &str) -> Result<Vec<FileInfo>, String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let session = self.sftp_service
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.list_dir(path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Navigate remote directory and return listing.
+    pub fn sftp_enter_dir(&self, session_id: &str, path: &str) -> Result<Vec<FileInfo>, String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let session = self.sftp_service
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.list_dir(path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Upload a file via SFTP service.
+    pub fn sftp_upload_file(&self, session_id: &str, local: &str, remote: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let session = self.sftp_service
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.upload(local, remote).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Download a file via SFTP service.
+    pub fn sftp_download_file(&self, session_id: &str, remote: &str, local: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let session = self.sftp_service
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.download(remote, local).await.map_err(|e| e.to_string())
+            })
+        })
     }
 
     pub fn close_sftp(&mut self) {
@@ -472,8 +536,8 @@ impl App {
             let mut state = SshTerminalState::new(server.clone());
             state.output.clear();
 
-            // Connect using SshService (async via block_in_place)
-            let result = {
+            // 1. Connect via SshService
+            let session_result = {
                 let ssh_service = &mut self.ssh_service;
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
@@ -481,23 +545,48 @@ impl App {
                 })
             };
 
-            match result {
+            match session_result {
                 Ok(session_id) => {
-                    // Test connection with a simple command
-                    let test_output = execute_ssh_command(&server, "echo 'Conexao OK'");
-                    match test_output {
-                        Ok(output) => {
+                    // 2. Open PTY shell
+                    let shell_result = {
+                        let ssh_service = &mut self.ssh_service;
+                        tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current()
+                                .block_on(ssh_service.open_shell(&session_id, true))
+                        })
+                    };
+
+                    match shell_result {
+                        Ok(channel) => {
+                            // 3. Spawn background task to forward output
+                            let (output_tx, output_rx) = mpsc::unbounded_channel();
+                            let data_rx = channel.data_rx.clone();
+
+                            tokio::spawn(async move {
+                                loop {
+                                    let data = data_rx.lock().await.recv().await;
+                                    match data {
+                                        Some(bytes) => {
+                                            let text = String::from_utf8_lossy(&bytes).to_string();
+                                            if output_tx.send(text).is_err() {
+                                                break;
+                                            }
+                                        }
+                                        None => break,
+                                    }
+                                }
+                            });
+
+                            self.ssh_output_rx = Some(output_rx);
                             state.set_connected(session_id);
-                            if !output.trim().is_empty() {
-                                state.add_output(output.trim().to_string());
-                            }
+                            state.shell_writer = Some(channel.writer.clone());
                             self.notifications
                                 .success(&format!("Conectado a {}!", server.name));
                         }
                         Err(e) => {
-                            state.set_error(e.clone());
+                            state.set_error(format!("Falha ao abrir shell: {}", e));
                             self.notifications
-                                .error(&format!("Falha ao conectar: {}", e));
+                                .error(&format!("Falha ao abrir shell: {}", e));
                         }
                     }
                 }

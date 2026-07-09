@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::config::models::Server;
-use crate::sftp::{FileInfo, LocalFs, RemoteFs};
+use crate::sftp::{FileInfo, LocalFs};
 use super::theme::Theme;
 
 #[derive(Debug, Clone)]
@@ -35,9 +35,9 @@ impl TransferProgress {
 #[derive(Debug)]
 pub struct SftpState {
     pub local: LocalFs,
-    pub remote: RemoteFs,
     pub local_files: Vec<FileInfo>,
     pub remote_files: Vec<FileInfo>,
+    pub remote_path: String,
     pub local_selected: usize,
     pub remote_selected: usize,
     pub local_selected_files: Vec<usize>,
@@ -57,31 +57,29 @@ pub enum Side {
 
 impl SftpState {
     pub fn new(server: Server) -> Self {
-        let mut remote = RemoteFs::with_server(server);
-        let remote_files = remote.list();
-
         let local = LocalFs::new();
         let local_files = local.list().unwrap_or_default();
+        let home_dir = format!("/home/{}", server.user);
 
         Self {
             local,
-            remote,
             local_files,
-            remote_files,
+            remote_files: Vec::new(),
+            remote_path: home_dir,
             local_selected: 0,
             remote_selected: 0,
             local_selected_files: Vec::new(),
             remote_selected_files: Vec::new(),
             focus_side: Side::Local,
-            status: "Conectado".to_string(),
+            status: "Conectando...".to_string(),
             transfer_progress: None,
             is_transferring: false,
             session_id: None,
         }
     }
 
-    pub fn refresh_remote(&mut self) {
-        self.remote_files = self.remote.list();
+    pub fn refresh_remote(&mut self, files: Vec<FileInfo>) {
+        self.remote_files = files;
         self.remote_selected = 0;
     }
 
@@ -141,8 +139,12 @@ impl SftpState {
                     .ok_or_else(|| "No file selected".to_string())?;
 
                 if file.is_dir {
-                    self.remote.cd(&file.name).map_err(|e| e.to_string())?;
-                    self.refresh_remote();
+                    self.remote_path = if self.remote_path.ends_with('/') {
+                        format!("{}{}", self.remote_path, file.name)
+                    } else {
+                        format!("{}/{}", self.remote_path, file.name)
+                    };
+                    // remote_files will be populated by the caller via App
                     Ok(())
                 } else {
                     Err("Not a directory".to_string())
@@ -159,40 +161,23 @@ impl SftpState {
                 Ok(())
             }
             Side::Remote => {
-                self.remote.cd("..").map_err(|e| e.to_string())?;
-                self.refresh_remote();
+                // Go to parent directory
+                let parent = if self.remote_path.ends_with('/') && self.remote_path.len() > 1 {
+                    self.remote_path.trim_end_matches('/')
+                } else {
+                    &self.remote_path
+                };
+
+                let parent = std::path::Path::new(parent)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "/".to_string());
+
+                self.remote_path = if parent.is_empty() { "/".to_string() } else { parent };
+                // remote_files will be populated by the caller via App
                 Ok(())
             }
         }
-    }
-
-    pub fn upload_selected(&mut self) -> Result<String, String> {
-        let file = self.local_files.get(self.local_selected)
-            .ok_or_else(|| "No file selected".to_string())?;
-
-        if file.is_dir {
-            return Err("Cannot upload directories".to_string());
-        }
-
-        let name = file.name.clone();
-        self.remote.upload(&name, &name).map_err(|e| e.to_string())?;
-        self.refresh_remote();
-        Ok(format!("Uploaded: {}", name))
-    }
-
-    pub fn download_selected(&mut self) -> Result<String, String> {
-        let file = self.remote_files.get(self.remote_selected)
-            .ok_or_else(|| "No file selected".to_string())?;
-
-        if file.is_dir {
-            return Err("Cannot download directories".to_string());
-        }
-
-        let name = file.name.clone();
-        let content = self.remote.get_file_content(&name)?;
-        self.local.download(&content, &name).map_err(|e| e.to_string())?;
-        self.refresh_local();
-        Ok(format!("Downloaded: {}", name))
     }
 
     pub fn toggle_focus(&mut self) {
@@ -374,7 +359,7 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
 
     let title = format!(
         " [R] Remote: {} {}",
-        state.remote.current_dir(),
+        state.remote_path,
         if is_focused { "[FOCUS]" } else { "" }
     );
 

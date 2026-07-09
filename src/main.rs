@@ -6,7 +6,7 @@ pub mod vault;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -28,6 +28,36 @@ impl Drop for CleanupGuard {
     }
 }
 
+// Helper: convert crossterm key events to byte sequences for the remote PTY
+fn key_event_to_bytes(ev: &KeyEvent) -> Vec<u8> {
+    let mods = ev.modifiers;
+    match ev.code {
+        KeyCode::Char(c) => {
+            if mods.contains(KeyModifiers::CONTROL) && c.is_ascii_alphabetic() {
+                return vec![(c.to_ascii_lowercase() as u8) - b'a' + 1];
+            }
+            if mods.contains(KeyModifiers::ALT) {
+                let mut bytes = vec![0x1b];
+                bytes.extend_from_slice(c.encode_utf8(&mut [0u8; 4]).as_bytes());
+                return bytes;
+            }
+            c.to_string().into_bytes()
+        }
+        KeyCode::Enter => b"\r".to_vec(),
+        KeyCode::Backspace => b"\x7f".to_vec(),
+        KeyCode::Tab => b"\t".to_vec(),
+        KeyCode::Esc => b"\x1b".to_vec(),
+        KeyCode::Delete => b"\x1b[3~".to_vec(),
+        KeyCode::Up => b"\x1b[A".to_vec(),
+        KeyCode::Down => b"\x1b[B".to_vec(),
+        KeyCode::Left => b"\x1b[D".to_vec(),
+        KeyCode::Right => b"\x1b[C".to_vec(),
+        KeyCode::Home => b"\x1b[H".to_vec(),
+        KeyCode::End => b"\x1b[F".to_vec(),
+        _ => vec![],
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     enable_raw_mode()?;
@@ -41,6 +71,34 @@ async fn main() -> Result<()> {
     let mut app = App::new(config.servers);
 
     loop {
+        // Drain SSH PTY output into terminal state (caractere por caractere)
+        if let Some(rx) = &mut app.ssh_output_rx {
+            let mut disconnected = false;
+            loop {
+                use tokio::sync::mpsc::error::TryRecvError;
+                match rx.try_recv() {
+                    Ok(text) => {
+                        if let Some(ssh) = &mut app.ssh_state {
+                            ssh.feed_output(&text);
+                        }
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+            if disconnected {
+                app.ssh_output_rx = None;
+                if let Some(ssh) = &mut app.ssh_state {
+                    ssh.flush_output();
+                    ssh.set_disconnected();
+                }
+                app.notifications.info("Conexão SSH encerrada.");
+            }
+        }
+
         terminal.draw(|f| {
             match app.current_view {
                 tui::app::CurrentView::ServerList => {
@@ -501,11 +559,49 @@ async fn main() -> Result<()> {
                                             app.notifications.warning(&e);
                                         }
                                     }
+                                    // If remote side entered, list new directory
+                                    let needs_refresh = app.sftp_state.as_ref()
+                                        .is_some_and(|s| s.focus_side == tui::sftp_browser::Side::Remote);
+                                    if needs_refresh {
+                                        let entry = (
+                                            app.sftp_state.as_ref().and_then(|s| s.session_id.clone()),
+                                            app.sftp_state.as_ref().map(|s| s.remote_path.clone()),
+                                        );
+                                        if let (Some(sid), Some(path)) = entry {
+                                            match app.sftp_list_remote_dir(&sid, &path) {
+                                                Ok(files) => {
+                                                    if let Some(sftp) = &mut app.sftp_state {
+                                                        sftp.refresh_remote(files);
+                                                    }
+                                                }
+                                                Err(e) => app.notifications.error(&e),
+                                            }
+                                        }
+                                    }
                                 }
                                 KeyCode::Backspace => {
                                     if let Some(sftp) = &mut app.sftp_state {
                                         if let Err(e) = sftp.go_parent() {
                                             app.notifications.warning(&e);
+                                        }
+                                    }
+                                    // If remote side go_parent, list the parent directory
+                                    let needs_refresh = app.sftp_state.as_ref()
+                                        .is_some_and(|s| s.focus_side == tui::sftp_browser::Side::Remote);
+                                    if needs_refresh {
+                                        let entry = (
+                                            app.sftp_state.as_ref().and_then(|s| s.session_id.clone()),
+                                            app.sftp_state.as_ref().map(|s| s.remote_path.clone()),
+                                        );
+                                        if let (Some(sid), Some(path)) = entry {
+                                            match app.sftp_list_remote_dir(&sid, &path) {
+                                                Ok(files) => {
+                                                    if let Some(sftp) = &mut app.sftp_state {
+                                                        sftp.refresh_remote(files);
+                                                    }
+                                                }
+                                                Err(e) => app.notifications.error(&e),
+                                            }
                                         }
                                     }
                                 }
@@ -528,6 +624,7 @@ async fn main() -> Result<()> {
                                 }
                                 KeyCode::Char('u') => {
                                     // Upload arquivo(s) selecionado(s)
+                                    let mut upload_data: Option<(Vec<(String, String, String)>, Option<String>)> = None;
                                     if let Some(sftp) = &mut app.sftp_state {
                                         if sftp.is_transferring {
                                             app.notifications.warning("Transferência em andamento!");
@@ -565,30 +662,52 @@ async fn main() -> Result<()> {
                                                 sftp.start_transfer(file_name, total_size, true);
                                                 app.notifications.info(&format!("Enviando {} arquivo(s)...", files.len()));
 
-                                                // Upload via SCP
-                                                let server = sftp.remote.server.clone();
-                                                if let Some(server) = server {
-                                                    for (name, _) in &files {
-                                                        let local_path = sftp.local.get_full_path(name);
-                                                        let remote_path = format!("{}/{}", sftp.remote.current_dir, name);
-                                                        match sftp.remote.upload(&local_path, &remote_path) {
-                                                            Ok(_) => {
-                                                                app.notifications.success(&format!("Enviado: {}", name));
-                                                            }
-                                                            Err(e) => {
-                                                                app.notifications.error(&format!("Erro ao enviar {}: {}", name, e));
-                                                            }
-                                                        }
-                                                    }
-                                                    sftp.refresh_remote();
-                                                    sftp.finish_transfer();
+                                                // Collect paths while sftp is borrowed
+                                                let session_id = sftp.session_id.clone();
+                                                let remote_path = sftp.remote_path.clone();
+                                                let paths: Vec<(String, String, String)> = files.iter().map(|(name, _)| {
+                                                    let local = sftp.local.get_full_path(name);
+                                                    let remote = format!("{}/{}", remote_path, name);
+                                                    (name.clone(), local, remote)
+                                                }).collect();
+                                                upload_data = Some((paths, session_id));
+                                            }
+                                        }
+                                    }
+
+                                    // Do upload outside sftp borrow
+                                    if let Some((ref paths, Some(ref sid))) = upload_data {
+                                        for (name, local, remote) in paths {
+                                            match app.sftp_upload_file(sid, local, remote) {
+                                                Ok(_) => {
+                                                    app.notifications.success(&format!("Enviado: {}", name));
+                                                }
+                                                Err(e) => {
+                                                    app.notifications.error(&format!("Erro ao enviar {}: {}", name, e));
                                                 }
                                             }
+                                        }
+                                        // Refresh remote listing
+                                        let rpath = app.sftp_state.as_ref()
+                                                                            .map(|s| s.remote_path.clone());
+                                        if let Some(rp) = rpath {
+                                            match app.sftp_list_remote_dir(sid, &rp) {
+                                                Ok(files) => {
+                                                    if let Some(sftp) = &mut app.sftp_state {
+                                                        sftp.refresh_remote(files);
+                                                    }
+                                                }
+                                                Err(e) => app.notifications.error(&e),
+                                            }
+                                        }
+                                        if let Some(sftp) = &mut app.sftp_state {
+                                            sftp.finish_transfer();
                                         }
                                     }
                                 }
                                 KeyCode::Char('d') => {
                                     // Download arquivo(s) selecionado(s)
+                                    let mut download_data: Option<(Vec<(String, String, String)>, Option<String>)> = None;
                                     if let Some(sftp) = &mut app.sftp_state {
                                         if sftp.is_transferring {
                                             app.notifications.warning("Transferência em andamento!");
@@ -626,132 +745,88 @@ async fn main() -> Result<()> {
                                                 sftp.start_transfer(file_name, total_size, false);
                                                 app.notifications.info(&format!("Baixando {} arquivo(s)...", files.len()));
 
-                                                // Download via SCP
-                                                for (name, _) in &files {
-                                                    let remote_path = format!("{}/{}", sftp.remote.current_dir, name);
-                                                    let local_path = sftp.local.get_full_path(name);
-                                                    match sftp.remote.download(&remote_path, &local_path) {
-                                                        Ok(_) => {
-                                                            app.notifications.success(&format!("Baixado: {}", name));
-                                                        }
-                                                        Err(e) => {
-                                                            app.notifications.error(&format!("Erro ao baixar {}: {}", name, e));
-                                                        }
-                                                    }
-                                                }
-                                                sftp.refresh_local();
-                                                sftp.finish_transfer();
+                                                // Collect paths while sftp is borrowed
+                                                let session_id = sftp.session_id.clone();
+                                                let remote_path = sftp.remote_path.clone();
+                                                let paths: Vec<(String, String, String)> = files.iter().map(|(name, _)| {
+                                                    let remote = format!("{}/{}", remote_path, name);
+                                                    let local = sftp.local.get_full_path(name);
+                                                    (name.clone(), remote, local)
+                                                }).collect();
+                                                download_data = Some((paths, session_id));
                                             }
+                                        }
+                                    }
+
+                                    // Do download outside sftp borrow
+                                    if let Some((ref paths, Some(ref sid))) = download_data {
+                                        for (name, remote, local) in paths {
+                                            match app.sftp_download_file(sid, remote, local) {
+                                                Ok(_) => {
+                                                    app.notifications.success(&format!("Baixado: {}", name));
+                                                }
+                                                Err(e) => {
+                                                    app.notifications.error(&format!("Erro ao baixar {}: {}", name, e));
+                                                }
+                                            }
+                                        }
+                                        // Refresh local listing
+                                        if let Some(sftp) = &mut app.sftp_state {
+                                            sftp.refresh_local();
+                                            sftp.finish_transfer();
                                         }
                                     }
                                 }
                                 KeyCode::Char('r') => {
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        sftp.refresh_remote();
                                         sftp.refresh_local();
-                                        app.notifications.info("Atualizado!");
                                     }
+                                    // Refresh remote via service
+                                    let entry = (
+                                        app.sftp_state.as_ref().and_then(|s| s.session_id.clone()),
+                                        app.sftp_state.as_ref().map(|s| s.remote_path.clone()),
+                                    );
+                                    if let (Some(sid), Some(path)) = entry {
+                                        match app.sftp_list_remote_dir(&sid, &path) {
+                                            Ok(files) => {
+                                                if let Some(sftp) = &mut app.sftp_state {
+                                                    sftp.refresh_remote(files);
+                                                }
+                                            }
+                                            Err(e) => app.notifications.error(&e),
+                                        }
+                                    }
+                                    app.notifications.info("Atualizado!");
                                 }
                                 _ => {}
                             }
                         }
                         tui::app::CurrentView::SshTerminal => {
-                            match key.code {
-                                KeyCode::Char('q') | KeyCode::Esc => app.close_ssh(),
-                                KeyCode::Char(c) => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.insert_char(c);
-                                        }
-                                    }
-                                }
-                                KeyCode::Backspace => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.delete_char_backward();
-                                        }
-                                    }
-                                }
-                                KeyCode::Delete => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.delete_char_forward();
-                                        }
-                                    }
-                                }
-                                KeyCode::Left => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.move_cursor_left();
-                                        }
-                                    }
-                                }
-                                KeyCode::Right => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.move_cursor_right();
-                                        }
-                                    }
-                                }
-                                KeyCode::Home => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.move_cursor_home();
-                                        }
-                                    }
-                                }
-                                KeyCode::End => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            ssh.move_cursor_end();
-                                        }
-                                    }
-                                }
-                                KeyCode::PageUp => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        ssh.scroll_page_up(10);
-                                    }
-                                }
-                                KeyCode::PageDown => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        ssh.scroll_page_down(10);
-                                    }
-                                }
-                                KeyCode::Enter => {
-                                    if let Some(ssh) = &mut app.ssh_state {
-                                        if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
-                                            let cmd = ssh.input.clone();
-                                            ssh.output.push(format!("{}{}", ssh.prompt(), cmd));
-
-                                            if cmd.trim() == "exit" || cmd.trim() == "quit" {
-                                                ssh.set_disconnected();
-                                                app.current_view = tui::app::CurrentView::ServerList;
-                                            } else if !cmd.trim().is_empty() {
-                                                // Executar comando via SSH
-                                                if let Some(server) = &ssh.server {
-                                                    let server = server.clone();
-                                                    let output = ssh::execute_ssh_command(&server, &cmd);
-                                                    match output {
-                                                        Ok(out) => {
-                                                            if !out.is_empty() {
-                                                                for line in out.lines() {
-                                                                    ssh.add_output(line.to_string());
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            // Mostrar erro mas não fechar conexão
-                                                            ssh.add_output(format!("Erro: {}", e));
-                                                        }
-                                                    }
+                            if let Some(ssh) = &mut app.ssh_state {
+                                // Ctrl+Q to disconnect and go back to server list
+                                if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q') {
+                                    app.close_ssh();
+                                } else if matches!(ssh.status, tui::ssh_terminal::SshStatus::Connected) {
+                                    match key.code {
+                                        KeyCode::PageUp => ssh.scroll_page_up(10),
+                                        KeyCode::PageDown => ssh.scroll_page_down(10),
+                                        _ => {
+                                            // All other keys go directly to the remote PTY shell
+                                            let bytes = key_event_to_bytes(&key);
+                                            if !bytes.is_empty() {
+                                                if let Some(writer) = &ssh.shell_writer {
+                                                    let writer = writer.clone();
+                                                    tokio::spawn(async move {
+                                                        use tokio::io::AsyncWriteExt;
+                                                        let mut w = writer.lock().await;
+                                                        let _ = w.write_all(&bytes).await;
+                                                        let _ = w.flush().await;
+                                                    });
                                                 }
                                             }
-                                            ssh.clear_input();
-                                            ssh.scroll_to_bottom();
                                         }
                                     }
                                 }
-                                _ => {}
                             }
                         }
                         _ => {}
@@ -792,14 +867,17 @@ async fn main() -> Result<()> {
                             // Iniciar seleção no terminal SSH
                             if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
                                 if let Some(ssh) = &mut app.ssh_state {
-                                    // Coordenadas do mouse são absolutas na tela
-                                    // Borda superior = row 1, borda esquerda = col 1
-                                    let row = mouse.row.saturating_sub(1) as usize; // -1 para borda
-                                    let col = mouse.column.saturating_sub(1) as usize; // -1 para borda
-                                    let total_lines = ssh.output.len();
+                                    // Mapear coordenada do mouse para índice no output
+                                    let content_row = mouse.row.saturating_sub(1) as usize;
+                                    let col = mouse.column.saturating_sub(1) as usize;
+                                    let padding = ssh.padding_top.get();
+                                    let first_line = ssh.first_visible_line.get();
 
-                                    if total_lines > 0 && row < total_lines {
-                                        ssh.start_selection(row, col);
+                                    if content_row >= padding {
+                                        let output_idx = first_line + (content_row - padding);
+                                        if output_idx < ssh.output.len() {
+                                            ssh.start_selection(output_idx, col);
+                                        }
                                     }
                                 }
                             }
@@ -821,12 +899,16 @@ async fn main() -> Result<()> {
                             // Atualizar seleção no terminal SSH
                             if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
                                 if let Some(ssh) = &mut app.ssh_state {
-                                    let row = mouse.row.saturating_sub(1) as usize;
+                                    let content_row = mouse.row.saturating_sub(1) as usize;
                                     let col = mouse.column.saturating_sub(1) as usize;
-                                    let total_lines = ssh.output.len();
+                                    let padding = ssh.padding_top.get();
+                                    let first_line = ssh.first_visible_line.get();
 
-                                    if total_lines > 0 && row < total_lines {
-                                        ssh.update_selection(row, col);
+                                    if content_row >= padding {
+                                        let output_idx = first_line + (content_row - padding);
+                                        if output_idx < ssh.output.len() {
+                                            ssh.update_selection(output_idx, col);
+                                        }
                                     }
                                 }
                             }
@@ -840,6 +922,7 @@ async fn main() -> Result<()> {
                                         if ssh.copy_selection_to_clipboard() {
                                             app.notifications.success("Texto copiado!");
                                         }
+                                        ssh.clear_selection();
                                     }
                                 }
                             }

@@ -23,7 +23,6 @@ impl Handler for SshClient {
         _server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
         // TODO: Implement known_hosts verification before production use
-        eprintln!("WARNING: Host key verification not implemented - vulnerable to MITM attacks");
         Ok(true)
     }
 }
@@ -161,14 +160,23 @@ impl SftpServiceSession {
         String::from_utf8(data).context("File is not valid UTF-8")
     }
 
-    /// Write data to a file.
+    /// Write data to a file (creates or overwrites).
     pub async fn write_file(&self, path: &str, data: &[u8]) -> Result<()> {
         let sftp = self
             .sftp
             .as_ref()
             .context("SFTP session not connected")?;
 
-        sftp.write(path, data)
+        use russh_sftp::protocol::OpenFlags;
+        use tokio::io::AsyncWriteExt;
+        let mut file = sftp
+            .open_with_flags(
+                path,
+                OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+            )
+            .await
+            .context("Failed to open remote file")?;
+        file.write_all(data)
             .await
             .context("Failed to write file")?;
 
