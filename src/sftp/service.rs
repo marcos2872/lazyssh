@@ -363,6 +363,16 @@ impl Default for SftpService {
     }
 }
 
+/// Insert a session for testing without real SFTP connection.
+#[cfg(test)]
+impl SftpService {
+    pub(crate) fn _test_add_session(&mut self, session: SftpServiceSession) -> String {
+        let id = session.id.clone();
+        self.sessions.insert(id.clone(), session);
+        id
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,6 +391,10 @@ mod tests {
             tags: vec![],
             pinned: false,
         }
+    }
+
+    fn mock_session() -> SftpServiceSession {
+        SftpServiceSession::new(test_server())
     }
 
     #[test]
@@ -404,5 +418,77 @@ mod tests {
         let s1 = SftpServiceSession::new(server.clone());
         let s2 = SftpServiceSession::new(server);
         assert_ne!(s1.id, s2.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_found() {
+        let mut service = SftpService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        assert!(service.get_session(&id).is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_session_not_found() {
+        let service = SftpService::new();
+        assert!(service.get_session("ghost").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_session_mut() {
+        let mut service = SftpService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        assert!(service.get_session_mut(&id).is_some());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_removes_session() {
+        let mut service = SftpService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        assert_eq!(service.session_count(), 1);
+        service.disconnect(&id).await.unwrap();
+        assert_eq!(service.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_nonexistent_returns_ok() {
+        let mut service = SftpService::new();
+        assert!(service.disconnect("ghost").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_all_empties_sessions() {
+        let mut service = SftpService::new();
+        service._test_add_session(mock_session());
+        service._test_add_session(mock_session());
+        assert_eq!(service.session_count(), 2);
+        service.disconnect_all().await;
+        assert_eq!(service.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_non_empty() {
+        let mut service = SftpService::new();
+        service._test_add_session(mock_session());
+        assert_eq!(service.list_sessions().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_session_count_non_empty() {
+        let mut service = SftpService::new();
+        service._test_add_session(mock_session());
+        service._test_add_session(mock_session());
+        assert_eq!(service.session_count(), 2);
+    }
+
+    #[test]
+    fn test_default() {
+        let service = SftpService::default();
+        assert_eq!(service.session_count(), 0);
     }
 }
