@@ -696,4 +696,199 @@ mod tests {
         app.filter("nonexistent");
         assert!(app.filtered_indices.is_empty());
     }
+
+    #[test]
+    fn test_selected_server() {
+        let app = App::new(test_servers());
+        let s = app.selected_server();
+        assert!(s.is_some());
+        assert_eq!(s.unwrap().name, "server1");
+    }
+
+    #[test]
+    fn test_selected_server_empty() {
+        let app = App::new(vec![]);
+        assert!(app.selected_server().is_none());
+    }
+
+    // --- EditState ---
+
+    #[test]
+    fn test_edit_state_from_key_server() {
+        let server = Server {
+            name: "editme".into(), host: "10.0.0.1".into(), port: 2222,
+            user: "admin".into(),
+            auth: Auth::Key { path: "~/.ssh/id_ed25519".into(), passphrase: Some("secret".into()) },
+            tags: vec![], pinned: true,
+        };
+        let es = EditState::from_server(&server, 0);
+        assert_eq!(es.name, "editme");
+        assert_eq!(es.port, "2222");
+        assert_eq!(es.key_path, "~/.ssh/id_ed25519");
+        assert_eq!(es.passphrase, "secret");
+        assert!(es.is_key_auth());
+    }
+
+    #[test]
+    fn test_edit_state_from_password_server() {
+        let server = Server {
+            name: "p".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: Auth::Password { vault_key: "vk".into() },
+            tags: vec![], pinned: false,
+        };
+        let es = EditState::from_server(&server, 0);
+        assert!(!es.is_key_auth());
+        assert_eq!(es.auth_type, "password");
+    }
+
+    #[test]
+    fn test_edit_state_current_value() {
+        let mut es = EditState {
+            field: EditField::Name, name: "n".into(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        assert_eq!(es.current_value(), "n");
+        es.field = EditField::Port;
+        assert_eq!(es.current_value(), "22");
+    }
+
+    #[test]
+    fn test_edit_state_next_field_key() {
+        let mut es = EditState {
+            field: EditField::Name, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        // Full cycle through 7 key-auth fields returns to Name
+        for _ in 0..7 { es.next_field(); }
+        assert_eq!(es.field, EditField::Name);
+    }
+
+    #[test]
+    fn test_edit_state_next_field_password() {
+        let mut es = EditState {
+            field: EditField::Name, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "password".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        es.next_field();
+        assert_eq!(es.field, EditField::Host);
+    }
+
+    #[test]
+    fn test_edit_state_prev_field() {
+        let mut es = EditState {
+            field: EditField::Passphrase, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        es.prev_field();
+        assert_eq!(es.field, EditField::KeyPath);
+    }
+
+    #[test]
+    fn test_edit_state_build_auth_key() {
+        let es = EditState {
+            field: EditField::Name, name: "n".into(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: "~/.ssh/custom".into(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        match es.build_auth() {
+            Auth::Key { path, passphrase } => {
+                assert_eq!(path, "~/.ssh/custom");
+                assert!(passphrase.is_none());
+            }
+            _ => panic!("expected Key auth"),
+        }
+    }
+
+    #[test]
+    fn test_edit_state_build_auth_password() {
+        let es = EditState {
+            field: EditField::Password, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "password".into(),
+            key_path: String::new(), passphrase: String::new(), password: "vaultkey".into(),
+            server_index: 0,
+        };
+        match es.build_auth() {
+            Auth::Password { vault_key } => assert_eq!(vault_key, "vaultkey"),
+            _ => panic!("expected Password auth"),
+        }
+    }
+
+    #[test]
+    fn test_edit_state_current_value_mut() {
+        let mut es = EditState {
+            field: EditField::Name, name: "old".into(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            server_index: 0,
+        };
+        *es.current_value_mut() = "new".to_string();
+        assert_eq!(es.name, "new");
+    }
+
+    // --- InsertState ---
+
+    #[test]
+    fn test_insert_state_new_has_defaults() {
+        let is = InsertState::new();
+        assert_eq!(is.port, "22");
+        assert_eq!(is.user, "root");
+        assert_eq!(is.auth_type, "key");
+        assert!(is.is_key_auth());
+        assert_eq!(is.field, InsertField::Name);
+    }
+
+    #[test]
+    fn test_insert_state_next_field() {
+        let mut is = InsertState::new();
+        is.next_field();
+        assert_eq!(is.field, InsertField::Host);
+    }
+
+    #[test]
+    fn test_insert_state_prev_field() {
+        let mut is = InsertState {
+            field: InsertField::Passphrase, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+        };
+        is.prev_field();
+        assert_eq!(is.field, InsertField::KeyPath);
+    }
+
+    #[test]
+    fn test_insert_state_current_value() {
+        let is = InsertState::new();
+        assert_eq!(is.current_value(), "");
+        let mut is2 = InsertState::new();
+        is2.field = InsertField::Port;
+        assert_eq!(is2.current_value(), "22");
+    }
+
+    #[test]
+    fn test_insert_state_current_value_mut() {
+        let mut is = InsertState::new();
+        *is.current_value_mut() = "newval".to_string();
+        assert_eq!(is.name, "newval");
+    }
+
+    #[test]
+    fn test_insert_state_build_auth_key_default_path() {
+        let is = InsertState::new();
+        match is.build_auth() {
+            Auth::Key { path, passphrase } => {
+                assert_eq!(path, "~/.ssh/id_rsa");
+                assert!(passphrase.is_none());
+            }
+            _ => panic!("expected Key"),
+        }
+    }
 }

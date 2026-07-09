@@ -502,7 +502,7 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
     f.render_widget(status, area);
 }
 
-fn format_size(size: u64) -> String {
+pub fn format_size(size: u64) -> String {
     if size < 1024 {
         format!("{}B", size)
     } else if size < 1024 * 1024 {

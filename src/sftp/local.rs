@@ -6,7 +6,7 @@ use super::FileInfo;
 
 #[derive(Debug)]
 pub struct LocalFs {
-    current_dir: PathBuf,
+    pub current_dir: PathBuf,
 }
 
 impl LocalFs {

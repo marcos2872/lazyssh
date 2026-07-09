@@ -5,6 +5,10 @@ use std::path::PathBuf;
 use super::{AppConfig, Server};
 
 pub fn get_config_path() -> PathBuf {
+    if let Ok(path) = std::env::var("LAZYSSH_TEST_CONFIG_PATH") {
+        return PathBuf::from(path);
+    }
+
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("lazyssh");

@@ -319,6 +319,15 @@ impl SshService {
     }
 }
 
+#[cfg(test)]
+impl SshService {
+    pub(crate) fn _test_add_session(&mut self, session: SshSession) -> String {
+        let id = session.id.clone();
+        self.sessions.insert(id.clone(), session);
+        id
+    }
+}
+
 impl Drop for SshService {
     fn drop(&mut self) {
         // Sessions are dropped here; the tokio tasks will be cancelled.
@@ -345,8 +354,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_service_new() {
+    fn mock_session() -> SshSession {
+        SshSession::new(test_server())
+    }
+
+    #[tokio::test]
+    async fn test_service_new() {
         let service = SshService::new();
         assert_eq!(service.session_count(), 0);
         assert!(service.list_sessions().is_empty());
@@ -366,5 +379,80 @@ mod tests {
         let s1 = SshSession::new(server.clone());
         let s2 = SshSession::new(server);
         assert_ne!(s1.id, s2.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_found() {
+        let mut service = SshService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        let found = service.get_session(&id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, id);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_not_found() {
+        let service = SshService::new();
+        assert!(service.get_session("nonexistent").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_session_mut() {
+        let mut service = SshService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        let found = service.get_session_mut(&id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, id);
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_removes_session() {
+        let mut service = SshService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        assert_eq!(service.session_count(), 1);
+        service.disconnect(&id).await.unwrap();
+        assert_eq!(service.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_nonexistent_returns_ok() {
+        let mut service = SshService::new();
+        assert!(service.disconnect("ghost").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_all_empties_sessions() {
+        let mut service = SshService::new();
+        service._test_add_session(mock_session());
+        service._test_add_session(mock_session());
+        service._test_add_session(mock_session());
+        assert_eq!(service.session_count(), 3);
+        service.disconnect_all().await;
+        assert_eq!(service.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_returns_ids() {
+        let mut service = SshService::new();
+        let session = mock_session();
+        let id = session.id.clone();
+        service._test_add_session(session);
+        let ids = service.list_sessions();
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0], id);
+    }
+
+    #[tokio::test]
+    async fn test_session_count_non_empty() {
+        let mut service = SshService::new();
+        service._test_add_session(mock_session());
+        service._test_add_session(mock_session());
+        assert_eq!(service.session_count(), 2);
     }
 }

@@ -705,4 +705,212 @@ mod tests {
         state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
         assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
     }
+
+    #[test]
+    fn test_new_sets_connecting_status() {
+        let state = SshTerminalState::new(crate::config::models::Server {
+            name: "test".into(),
+            host: "h".into(),
+            port: 22,
+            user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![],
+            pinned: false,
+        });
+        assert!(matches!(state.status, SshStatus::Connecting));
+        assert_eq!(state.server_name, "test");
+        assert!(state.output.is_empty());
+    }
+
+    #[test]
+    fn test_set_connected() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.set_connected("sid123".into());
+        assert!(matches!(state.status, SshStatus::Connected));
+        assert_eq!(state.session_id.as_deref(), Some("sid123"));
+    }
+
+    #[test]
+    fn test_set_error() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.set_error("connection refused".into());
+        assert!(matches!(state.status, SshStatus::Error(_)));
+        assert!(state.output.iter().any(|l| l.contains("connection refused")));
+    }
+
+    #[test]
+    fn test_set_disconnected() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.set_disconnected();
+        assert!(matches!(state.status, SshStatus::Disconnected));
+    }
+
+    #[test]
+    fn test_scroll_up_and_down() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.output = vec!["a".into(), "b".into(), "c".into()];
+        state.scroll_up(2);
+        assert_eq!(state.scroll_offset, 2);
+        state.scroll_down(1);
+        assert_eq!(state.scroll_offset, 1);
+    }
+
+    #[test]
+    fn test_scroll_does_not_overflow() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.output = vec!["a".into()];
+        state.scroll_up(999);
+        assert_eq!(state.scroll_offset, 0); // max_scroll = 0
+    }
+
+    #[test]
+    fn test_scroll_to_bottom() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.scroll_offset = 5;
+        state.scroll_to_bottom();
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_add_output() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.add_output("line1".into());
+        assert_eq!(state.output, vec!["line1"]);
+    }
+
+    #[test]
+    fn test_flush_output() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.current_line = "pending".into();
+        assert!(state.output.is_empty());
+        state.flush_output();
+        assert_eq!(state.output, vec!["pending"]);
+        assert!(state.current_line.is_empty());
+    }
+
+    #[test]
+    fn test_selection_start_update_end() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.start_selection(0, 3);
+        assert!(state.is_selecting);
+        assert_eq!(state.selection.as_ref().unwrap().start_row, 0);
+        assert_eq!(state.selection.as_ref().unwrap().end_col, 3);
+
+        state.update_selection(2, 7);
+        assert_eq!(state.selection.as_ref().unwrap().end_row, 2);
+        assert_eq!(state.selection.as_ref().unwrap().end_col, 7);
+
+        state.end_selection();
+        assert!(!state.is_selecting);
+    }
+
+    #[test]
+    fn test_clear_selection() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.start_selection(0, 0);
+        state.clear_selection();
+        assert!(state.selection.is_none());
+        assert!(!state.is_selecting);
+    }
+
+    #[test]
+    fn test_get_selected_text_single_line() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.output = vec!["hello world".into()];
+        state.start_selection(0, 0);
+        state.update_selection(0, 5);
+        assert_eq!(state.get_selected_text(), Some("hello".into()));
+    }
+
+    #[test]
+    fn test_get_selected_text_multi_line() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.output = vec!["line one".into(), "line two".into()];
+        state.start_selection(0, 5);
+        state.update_selection(1, 3);
+        let text = state.get_selected_text().unwrap();
+        assert!(text.contains("one") || text.contains("two"));
+    }
+
+    #[test]
+    fn test_get_selected_text_no_selection() {
+        let state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        assert_eq!(state.get_selected_text(), None);
+    }
+
+    #[test]
+    fn test_is_selected_within_range() {
+        let mut state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        state.output = vec!["aaaa".into(), "bbbb".into(), "cccc".into()];
+        state.start_selection(0, 0);
+        state.update_selection(2, 4);
+        assert!(state.is_selected(1, 2));
+        assert!(!state.is_selected(3, 0)); // row beyond last
+    }
+
+    #[test]
+    fn test_is_selected_no_selection() {
+        let state = SshTerminalState::new(crate::config::models::Server {
+            name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
+            auth: crate::config::models::Auth::Password { vault_key: "x".into() },
+            tags: vec![], pinned: false,
+        });
+        assert!(!state.is_selected(0, 0));
+    }
 }

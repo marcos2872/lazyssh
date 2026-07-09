@@ -47,3 +47,68 @@ impl AppEffects {
         self.manager.add_effect(dissolve);
     }
 }
+
+#[cfg(test)]
+impl AppEffects {
+    pub(crate) fn set_up_all_effects(&mut self) {
+        super::AppEffects::add_modal_open_effect(self);
+        super::AppEffects::add_modal_close_effect(self);
+        super::AppEffects::add_notification_effect(self);
+        super::AppEffects::add_server_select_effect(self);
+        super::AppEffects::add_ssh_connect_effect(self);
+        super::AppEffects::add_sftp_open_effect(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_and_default_create_manager() {
+        let new_effects = AppEffects::new();
+        assert!(!new_effects.manager.is_running());
+
+        let default_effects = AppEffects::default();
+        assert!(!default_effects.manager.is_running());
+    }
+
+    #[test]
+    fn test_modal_open_effect() {
+        let mut effects = AppEffects::new();
+        effects.add_modal_open_effect();
+        assert!(effects.manager.is_running());
+    }
+
+    #[test]
+    fn test_multiple_effects_stack() {
+        let mut effects = AppEffects::new();
+        effects.set_up_all_effects();
+        assert!(effects.manager.is_running());
+    }
+
+    #[test]
+    fn test_all_effect_types_are_executed() {
+        let mut effects = AppEffects::new();
+        effects.set_up_all_effects();
+        assert!(effects.manager.is_running());
+    }
+
+    #[test]
+    fn test_add_server_select_effect() {
+        let mut effects = AppEffects::new();
+        effects.add_server_select_effect();
+        effects.add_ssh_connect_effect();
+        effects.add_sftp_open_effect();
+        assert!(effects.manager.is_running());
+    }
+
+    #[test]
+    fn test_modal_close_notification_effects() {
+        let mut effects = AppEffects::new();
+        effects.add_modal_close_effect();
+        effects.add_notification_effect();
+        assert!(effects.manager.is_running());
+    }
+
+}

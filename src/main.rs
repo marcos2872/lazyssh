@@ -960,3 +960,83 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn test_key_event_regular_char() {
+        let ev = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"a");
+    }
+
+    #[test]
+    fn test_key_event_ctrl_c() {
+        let ev = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(key_event_to_bytes(&ev), &[3]);
+    }
+
+    #[test]
+    fn test_key_event_ctrl_d() {
+        let ev = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert_eq!(key_event_to_bytes(&ev), &[4]);
+    }
+
+    #[test]
+    fn test_key_event_alt_char() {
+        let ev = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
+        assert_eq!(key_event_to_bytes(&ev), &[0x1b, b'x']);
+    }
+
+    #[test]
+    fn test_key_event_enter() {
+        let ev = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"\r");
+    }
+
+    #[test]
+    fn test_key_event_backspace() {
+        let ev = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"\x7f");
+    }
+
+    #[test]
+    fn test_key_event_tab() {
+        let ev = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"\t");
+    }
+
+    #[test]
+    fn test_key_event_esc() {
+        let ev = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"\x1b");
+    }
+
+    #[test]
+    fn test_key_event_delete() {
+        let ev = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
+        assert_eq!(key_event_to_bytes(&ev), b"\x1b[3~");
+    }
+
+    #[test]
+    fn test_key_event_arrows() {
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)), b"\x1b[A");
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)), b"\x1b[B");
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)), b"\x1b[D");
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)), b"\x1b[C");
+    }
+
+    #[test]
+    fn test_key_event_home_end() {
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)), b"\x1b[H");
+        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::End, KeyModifiers::NONE)), b"\x1b[F");
+    }
+
+    #[test]
+    fn test_key_event_unmapped_returns_empty() {
+        let ev = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+        assert!(key_event_to_bytes(&ev).is_empty());
+    }
+}
