@@ -4,7 +4,7 @@ pub mod ssh;
 pub mod tui;
 pub mod vault;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
     execute,
@@ -15,7 +15,10 @@ use ratatui::{
     layout::Rect,
     Terminal,
 };
-use std::io;
+use std::{
+    io,
+    process::{Command, ExitStatus},
+};
 
 use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, Theme};
 
@@ -26,6 +29,68 @@ impl Drop for CleanupGuard {
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
     }
+}
+
+fn reenter_tui() -> Result<()> {
+    enable_raw_mode()?;
+    let mut stream = io::stdout();
+    execute!(stream, EnterAlternateScreen, EnableMouseCapture)?;
+    Ok(())
+}
+
+fn leave_tui() -> Result<()> {
+    disable_raw_mode()?;
+    let mut stream = io::stdout();
+    execute!(stream, LeaveAlternateScreen, DisableMouseCapture)?;
+    Ok(())
+}
+
+fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
+    let mut ssh_args = vec![];
+
+    if server.port != 22 {
+        ssh_args.push("-p".to_string());
+        ssh_args.push(server.port.to_string());
+    }
+
+    match &server.auth {
+        crate::config::models::Auth::Key { path, .. } => {
+            let expanded = shellexpand::tilde(path).into_owned();
+            ssh_args.push("-i".to_string());
+            ssh_args.push(expanded);
+        }
+        crate::config::models::Auth::Password { vault_key } => {
+            if !vault_key.is_empty() {
+                let mut args = vec![
+                    "sshpass".to_string(),
+                    "-p".to_string(),
+                    vault_key.clone(),
+                    "ssh".to_string(),
+                ];
+                args.append(&mut ssh_args);
+                args.push(format!("{}@{}", server.user, server.host));
+                return ("sshpass".to_string(), args);
+            }
+        }
+    }
+
+    ssh_args.push(format!("{}@{}", server.user, server.host));
+    ("ssh".to_string(), ssh_args)
+}
+
+fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
+    let (command, args) = native_shell_command(server);
+
+    leave_tui()?;
+
+    let status = Command::new(&command)
+        .args(args)
+        .status()
+        .with_context(|| format!("failed to start `{}`", command))?;
+
+    reenter_tui()?;
+
+    Ok(status)
 }
 
 // Helper: convert crossterm key events to byte sequences for the remote PTY
@@ -387,8 +452,19 @@ async fn main() -> Result<()> {
                                     }
                                     KeyCode::Char('s') => app.open_sftp(),
                                     KeyCode::Enter => {
-                                        if let Some(_server) = app.selected_server() {
-                                            app.connect_ssh();
+                                        if let Some(server) = app.selected_server().cloned() {
+                                            match run_native_shell_handoff(&server) {
+                                                Ok(status) => {
+                                                    let message = if status.success() {
+                                                        "Conexão SSH encerrada."
+                                                    } else {
+                                                        "SSH saiu sem término bem-sucedido."
+                                                    };
+                                                    app.notifications.info(message);
+                                                    let _ = terminal.clear();
+                                                }
+                                                Err(e) => app.notifications.error(&format!("Falha ao abrir SSH: {}", e)),
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -941,7 +1017,21 @@ async fn main() -> Result<()> {
                                     let clicked_index = (mouse.row - 4) as usize;
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
-                                        app.connect_ssh();
+                                        match app.selected_server().cloned() {
+                                            Some(server) => match run_native_shell_handoff(&server) {
+                                                Ok(status) => {
+                                                    let message = if status.success() {
+                                                        "Conexão SSH encerrada."
+                                                    } else {
+                                                        "SSH saiu sem término bem-sucedido."
+                                                    };
+                                                    app.notifications.info(message);
+                                                    let _ = terminal.clear();
+                                                }
+                                                Err(e) => app.notifications.error(&format!("Falha ao abrir SSH: {}", e)),
+                                            },
+                                            None => {}
+                                        }
                                     }
                                 }
                             }
@@ -1038,5 +1128,67 @@ mod tests {
     fn test_key_event_unmapped_returns_empty() {
         let ev = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
         assert!(key_event_to_bytes(&ev).is_empty());
+    }
+
+    #[test]
+    fn test_native_shell_command_key_auth() {
+        let server = crate::config::models::Server {
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_ed25519".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+        };
+        let (cmd, args) = native_shell_command(&server);
+        assert_eq!(cmd, "ssh");
+        assert!(args.contains(&"-i".to_string()));
+        assert!(args.contains(&"root@example.com".to_string()));
+    }
+
+    #[test]
+    fn test_native_shell_command_password_auth() {
+        let server = crate::config::models::Server {
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Password {
+                vault_key: "secret123".into(),
+            },
+            tags: vec![],
+            pinned: false,
+        };
+        let (cmd, args) = native_shell_command(&server);
+        assert_eq!(cmd, "sshpass");
+        assert_eq!(args[0], "sshpass");
+        assert_eq!(args[1], "-p");
+        assert_eq!(args[2], "secret123");
+        assert_eq!(args[3], "ssh");
+        assert!(args.contains(&"root@example.com".to_string()));
+    }
+
+    #[test]
+    fn test_native_shell_command_custom_port() {
+        let server = crate::config::models::Server {
+            name: "test".into(),
+            host: "example.com".into(),
+            port: 2222,
+            user: "admin".into(),
+            auth: crate::config::models::Auth::Password {
+                vault_key: "pass".into(),
+            },
+            tags: vec![],
+            pinned: false,
+        };
+        let (cmd, args) = native_shell_command(&server);
+        assert_eq!(cmd, "sshpass");
+        assert!(args.contains(&"-p".to_string()));
+        assert!(args.contains(&"2222".to_string()));
+        assert!(args.contains(&"admin@example.com".to_string()));
     }
 }
