@@ -42,9 +42,9 @@ pub fn save_config(config: &AppConfig, path: &std::path::Path) -> Result<()> {
 pub fn load_or_default() -> AppConfig {
     let path = get_config_path();
     if path.exists() {
-        load_config(&path).unwrap_or_else(|_| AppConfig { servers: vec![] })
+        load_config(&path).unwrap_or_else(|_| AppConfig { servers: vec![], sort_by: None })
     } else {
-        AppConfig { servers: vec![] }
+        AppConfig { servers: vec![], sort_by: None }
     }
 }
 

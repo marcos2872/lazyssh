@@ -36,6 +36,8 @@ fn test_server_creation() {
         },
         tags: vec!["prod".to_string()],
         pinned: false,
+        last_connected: None,
+        connection_count: 0,
     };
     assert_eq!(server.name, "myserver");
     assert_eq!(server.port, 22);
@@ -72,7 +74,10 @@ fn test_config_serialization_round_trip() {
             },
             tags: vec!["dev".to_string()],
             pinned: true,
+            last_connected: None,
+            connection_count: 0,
         }],
+        sort_by: None,
     };
 
     let json = serde_json::to_string(&config).expect("serialization failed");
@@ -93,7 +98,10 @@ fn test_config_password_serialization_round_trip() {
             },
             tags: vec![],
             pinned: false,
+            last_connected: None,
+            connection_count: 0,
         }],
+        sort_by: None,
     };
 
     let json = serde_json::to_string(&config).expect("serialization failed");
@@ -125,7 +133,10 @@ fn test_save_and_load_config() {
             },
             tags: vec![],
             pinned: false,
+            last_connected: None,
+            connection_count: 0,
         }],
+        sort_by: None,
     };
 
     let path = test_dir.join("servers.toml");
@@ -160,7 +171,7 @@ fn test_load_config_invalid_toml() {
 
 #[test]
 fn test_empty_config() {
-    let config = AppConfig { servers: vec![] };
+    let config = AppConfig { servers: vec![], sort_by: None };
     assert!(config.servers.is_empty());
 }
 
@@ -176,6 +187,8 @@ fn test_config_with_multiple_servers() {
                 auth: Auth::Key { path: "~/.ssh/id_a".to_string(), passphrase: None },
                 tags: vec!["tag1".to_string()],
                 pinned: false,
+                last_connected: None,
+                connection_count: 0,
             },
             Server {
                 name: "beta".to_string(),
@@ -185,8 +198,11 @@ fn test_config_with_multiple_servers() {
                 auth: Auth::Password { vault_key: "beta_key".to_string() },
                 tags: vec!["tag2".to_string(), "tag3".to_string()],
                 pinned: true,
+                last_connected: None,
+                connection_count: 0,
             },
         ],
+        sort_by: None,
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -243,7 +259,10 @@ fn test_save_config_creates_backup() {
             auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
             tags: vec![],
             pinned: false,
+            last_connected: None,
+            connection_count: 0,
         }],
+        sort_by: None,
     };
     save_config(&config, &path).unwrap();
 
@@ -257,7 +276,10 @@ fn test_save_config_creates_backup() {
             auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
             tags: vec![],
             pinned: false,
+            last_connected: None,
+            connection_count: 0,
         }],
+        sort_by: None,
     };
     save_config(&config_v2, &path).unwrap();
 
@@ -288,6 +310,8 @@ fn test_add_server_creates_entry() {
         auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
         tags: vec![],
         pinned: false,
+        last_connected: None,
+        connection_count: 0,
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -317,6 +341,8 @@ fn test_remove_server_deletes_entry() {
         auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
         tags: vec![],
         pinned: false,
+        last_connected: None,
+        connection_count: 0,
     };
     lazyssh::config::file::add_server(server).unwrap();
     lazyssh::config::file::remove_server("to-remove").unwrap();
@@ -346,6 +372,8 @@ fn test_update_server_modifies_entry() {
         auth: Auth::Key { path: "~/.ssh/id_rsa".to_string(), passphrase: None },
         tags: vec![],
         pinned: false,
+        last_connected: None,
+        connection_count: 0,
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -357,6 +385,8 @@ fn test_update_server_modifies_entry() {
         auth: Auth::Key { path: "~/.ssh/id_ed25519".to_string(), passphrase: Some("s3cret".into()) },
         tags: vec!["updated".into()],
         pinned: true,
+        last_connected: None,
+        connection_count: 0,
     };
     lazyssh::config::file::update_server("to-update", updated).unwrap();
 

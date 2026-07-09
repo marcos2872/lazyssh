@@ -6,6 +6,7 @@ pub mod vault;
 
 use anyhow::{Context, Result};
 use crossterm::{
+    cursor,
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -126,7 +127,7 @@ fn key_event_to_bytes(ev: &KeyEvent) -> Vec<u8> {
 async fn main() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, cursor::Hide)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let _guard = CleanupGuard;
@@ -395,6 +396,52 @@ async fn main() -> Result<()> {
             // Renderizar notificações por cima de tudo
             app.notifications.clear_expired();
             render_notifications(f, &app.notifications, f.area());
+
+            // Renderizar modal de confirmação
+            if let Some(ref confirm) = app.confirm_state {
+                let area = f.area();
+                let width = 45u16;
+                let height = 5u16;
+                let x = (area.width - width) / 2;
+                let y = (area.height - height) / 2;
+                let rect = ratatui::layout::Rect::new(x, y, width, height);
+
+                let msg = match &confirm.action {
+                    tui::app::ConfirmAction::DeleteServer { name } => {
+                        format!("Remover servidor '{}'?", name)
+                    }
+                };
+
+                let lines = vec![
+                    ratatui::text::Line::from(""),
+                    ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled(
+                            format!("  {}  ", msg),
+                            ratatui::style::Style::default().fg(Theme::text()).add_modifier(ratatui::style::Modifier::BOLD),
+                        ),
+                    ]),
+                    ratatui::text::Line::from(""),
+                    ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled("  Enter:Confirmar  ", ratatui::style::Style::default().fg(Theme::success())),
+                        ratatui::text::Span::styled("│  Esc:Cancelar", ratatui::style::Style::default().fg(Theme::error())),
+                    ]),
+                ];
+
+                let block = ratatui::widgets::Block::default()
+                    .borders(ratatui::widgets::Borders::ALL)
+                    .title(" ⚠ Confirmação ")
+                    .title_style(Theme::modal_title_style())
+                    .border_style(Theme::modal_border_style())
+                    .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black));
+
+                f.render_widget(ratatui::widgets::Clear, rect);
+                f.render_widget(ratatui::widgets::Paragraph::new(lines).block(block), rect);
+            }
+
+            // Renderizar modal de ajuda por cima de tudo
+            if app.help_visible {
+                tui::render_help_modal(f, &app.current_view);
+            }
         })?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -403,16 +450,37 @@ async fn main() -> Result<()> {
             match event {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
+                        // Help modal intercepts all keys when visible
+                        if app.help_visible {
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Char('?') => {
+                                    app.help_visible = false;
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        // Global ? handler — open help from any view
+                        if key.code == KeyCode::Char('?')
+                            && !matches!(app.input_mode, tui::app::InputMode::Insert | tui::app::InputMode::Edit)
+                        {
+                            app.help_visible = true;
+                            continue;
+                        }
+
                         match app.current_view {
                         tui::app::CurrentView::ServerList => {
                             match app.input_mode {
                                 tui::app::InputMode::Normal => match key.code {
                                     KeyCode::Char('q') => app.should_quit = true,
+                                    KeyCode::Char('O') => app.cycle_sort_by(),
                                     KeyCode::Char('j') | KeyCode::Down => app.next(),
                                     KeyCode::Char('k') | KeyCode::Up => app.previous(),
                                     KeyCode::Char('/') => {
                                         app.input_mode = tui::app::InputMode::Search;
                                         app.input.clear();
+                                        let _ = execute!(io::stdout(), cursor::Show, cursor::SetCursorStyle::BlinkingBar);
                                     }
                                     KeyCode::Char('a') => {
                                         app.insert_state = Some(tui::app::InsertState::new());
@@ -431,7 +499,7 @@ async fn main() -> Result<()> {
                                             let status = if server.pinned { "fixado" } else { "desafixado" };
                                             app.notifications.success(&format!("Servidor {}!", status));
                                             let _ = config::save_config(
-                                                &config::AppConfig { servers: app.servers.clone() },
+                                                &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                 &config::get_config_path(),
                                             );
                                         }
@@ -439,16 +507,32 @@ async fn main() -> Result<()> {
                                     KeyCode::Char('d') => {
                                         if let Some(server) = app.selected_server() {
                                             let name = server.name.clone();
-                                            app.servers.retain(|s| s.name != name);
-                                            app.filter(&app.input.clone());
-                                            app.notifications.success(&format!("Servidor '{}' removido.", name));
-                                            let _ = config::save_config(
-                                                &config::AppConfig { servers: app.servers.clone() },
-                                                &config::get_config_path(),
-                                            );
+                                            app.confirm_state = Some(tui::app::ConfirmState {
+                                                action: tui::app::ConfirmAction::DeleteServer { name },
+                                            });
+                                            app.input_mode = tui::app::InputMode::Confirm;
                                         }
                                     }
                                     KeyCode::Char('s') => app.open_sftp(),
+                                    KeyCode::Char('y') => {
+                                        if let Some(server) = app.selected_server() {
+                                            if tui::ssh_terminal::copy_to_clipboard(&server.host) {
+                                                app.notifications.success(&format!("Copiado: {}", server.host));
+                                            } else {
+                                                app.notifications.error("Falha ao copiar.");
+                                            }
+                                        }
+                                    }
+                                    KeyCode::Char('Y') => {
+                                        if let Some(server) = app.selected_server() {
+                                            let text = format!("{}@{}:{}", server.user, server.host, server.port);
+                                            if tui::ssh_terminal::copy_to_clipboard(&text) {
+                                                app.notifications.success(&format!("Copiado: {}", text));
+                                            } else {
+                                                app.notifications.error("Falha ao copiar.");
+                                            }
+                                        }
+                                    }
                                     KeyCode::Enter => {
                                         if let Some(server) = app.selected_server().cloned() {
                                             match run_native_shell_handoff(&server) {
@@ -510,11 +594,13 @@ async fn main() -> Result<()> {
                                                             auth,
                                                             tags: vec![],
                                                             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
                                                         };
                                                         app.servers.push(server);
                                                         app.filter(&app.input.clone());
                                                         let _ = config::save_config(
-                                                            &config::AppConfig { servers: app.servers.clone() },
+                                                            &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                             &config::get_config_path(),
                                                         );
                                                         app.notifications.success(&format!("Servidor '{}' adicionado!", name));
@@ -571,7 +657,7 @@ async fn main() -> Result<()> {
                                                         server.user = user;
                                                         server.auth = auth;
                                                         let _ = config::save_config(
-                                                            &config::AppConfig { servers: app.servers.clone() },
+                                                            &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                             &config::get_config_path(),
                                                         );
                                                         app.notifications.success(&format!("Servidor '{}' atualizado!", name));
@@ -585,11 +671,15 @@ async fn main() -> Result<()> {
                                     }
                                 }
                                 tui::app::InputMode::Search => match key.code {
-                                    KeyCode::Enter => app.input_mode = tui::app::InputMode::Normal,
+                                    KeyCode::Enter => {
+                                        app.input_mode = tui::app::InputMode::Normal;
+                                        let _ = execute!(io::stdout(), cursor::Hide, cursor::SetCursorStyle::DefaultUserShape);
+                                    }
                                     KeyCode::Esc => {
                                         app.input_mode = tui::app::InputMode::Normal;
                                         app.input.clear();
                                         app.filter("");
+                                        let _ = execute!(io::stdout(), cursor::Hide, cursor::SetCursorStyle::DefaultUserShape);
                                     }
                                     KeyCode::Char(c) => {
                                         app.input.push(c);
@@ -598,6 +688,29 @@ async fn main() -> Result<()> {
                                     KeyCode::Backspace => {
                                         app.input.pop();
                                         app.filter(&app.input.clone());
+                                    }
+                                    _ => {}
+                                }
+                                tui::app::InputMode::Confirm => match key.code {
+                                    KeyCode::Enter => {
+                                        if let Some(confirm) = app.confirm_state.take() {
+                                            match confirm.action {
+                                                tui::app::ConfirmAction::DeleteServer { name } => {
+                                                    app.servers.retain(|s| s.name != name);
+                                                    app.filter(&app.input.clone());
+                                                    app.notifications.success(&format!("Servidor '{}' removido.", name));
+                                                    let _ = config::save_config(
+                                                        &config::AppConfig { servers: app.servers.clone(), sort_by: None },
+                                                        &config::get_config_path(),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        app.input_mode = tui::app::InputMode::Normal;
+                                    }
+                                    KeyCode::Esc => {
+                                        app.confirm_state = None;
+                                        app.input_mode = tui::app::InputMode::Normal;
                                     }
                                     _ => {}
                                 }
@@ -1140,6 +1253,8 @@ mod tests {
             },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
@@ -1159,6 +1274,8 @@ mod tests {
             },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1181,6 +1298,8 @@ mod tests {
             },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");

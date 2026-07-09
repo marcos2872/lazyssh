@@ -16,6 +16,8 @@ fn test_server() -> Server {
         },
         tags: vec![],
         pinned: false,
+        last_connected: None,
+        connection_count: 0,
     }
 }
 

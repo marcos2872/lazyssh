@@ -237,51 +237,10 @@ impl SshTerminalState {
             None => return false,
         };
 
-        // Tentar wl-copy (Wayland), xclip (X11), ou arboard como fallback
-        if let Ok(mut child) = std::process::Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        {
-            use std::io::Write;
-            let result = child
-                .stdin
-                .take()
-                .and_then(|mut stdin| stdin.write_all(text.as_bytes()).ok())
-                .and_then(|_| child.wait().ok())
-                .map(|status| status.success())
-                .unwrap_or(false);
-            if result {
-                return true;
-            }
+        if copy_to_clipboard(&text) {
+            return true;
         }
-
-        // Fallback: xclip
-        if let Ok(mut child) = std::process::Command::new("xclip")
-            .args(["-selection", "clipboard"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        {
-            use std::io::Write;
-            let result = child
-                .stdin
-                .take()
-                .and_then(|mut stdin| stdin.write_all(text.as_bytes()).ok())
-                .and_then(|_| child.wait().ok())
-                .map(|status| status.success())
-                .unwrap_or(false);
-            if result {
-                return true;
-            }
-        }
-
-        // Fallback: arboard
-        if self.clipboard.is_none() {
-            self.clipboard = arboard::Clipboard::new().ok();
-        }
-        match &mut self.clipboard {
-            Some(cb) => cb.set_text(&text).is_ok(),
-            None => false,
-        }
+        false
     }
 
     pub fn is_selected(&self, row: usize, col: usize) -> bool {
@@ -312,6 +271,51 @@ impl SshTerminalState {
         } else {
             false
         }
+    }
+}
+
+pub fn copy_to_clipboard(text: &str) -> bool {
+    // Tentar wl-copy (Wayland)
+    if let Ok(mut child) = std::process::Command::new("wl-copy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        use std::io::Write;
+        let result = child
+            .stdin
+            .take()
+            .and_then(|mut stdin| stdin.write_all(text.as_bytes()).ok())
+            .and_then(|_| child.wait().ok())
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if result {
+            return true;
+        }
+    }
+
+    // Fallback: xclip
+    if let Ok(mut child) = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        use std::io::Write;
+        let result = child
+            .stdin
+            .take()
+            .and_then(|mut stdin| stdin.write_all(text.as_bytes()).ok())
+            .and_then(|_| child.wait().ok())
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if result {
+            return true;
+        }
+    }
+
+    // Fallback: arboard
+    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+        Ok(_) => true,
+        Err(_) => false,
     }
 }
 
@@ -652,6 +656,8 @@ mod tests {
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.feed_output("before\x1b[2Jafter");
         assert!(state.output.is_empty(), "[2J should clear output");
@@ -668,6 +674,8 @@ mod tests {
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.feed_output("line1\rline2\r\x1b[2J\x1b[Hclean");
         assert!(state.output.is_empty(), "output should be cleared");
@@ -684,6 +692,8 @@ mod tests {
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.feed_output("keep\r");
         assert!(!state.output.is_empty(), "\\r should push line to output");
@@ -701,6 +711,8 @@ mod tests {
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
         assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
@@ -716,6 +728,8 @@ mod tests {
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![],
             pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         assert!(matches!(state.status, SshStatus::Connecting));
         assert_eq!(state.server_name, "test");
@@ -728,6 +742,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.set_connected("sid123".into());
         assert!(matches!(state.status, SshStatus::Connected));
@@ -740,6 +756,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.set_error("connection refused".into());
         assert!(matches!(state.status, SshStatus::Error(_)));
@@ -752,6 +770,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.set_disconnected();
         assert!(matches!(state.status, SshStatus::Disconnected));
@@ -763,6 +783,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.output = vec!["a".into(), "b".into(), "c".into()];
         state.scroll_up(2);
@@ -777,6 +799,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.output = vec!["a".into()];
         state.scroll_up(999);
@@ -789,6 +813,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.scroll_offset = 5;
         state.scroll_to_bottom();
@@ -801,6 +827,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.add_output("line1".into());
         assert_eq!(state.output, vec!["line1"]);
@@ -812,6 +840,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.current_line = "pending".into();
         assert!(state.output.is_empty());
@@ -826,6 +856,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.start_selection(0, 3);
         assert!(state.is_selecting);
@@ -846,6 +878,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.start_selection(0, 0);
         state.clear_selection();
@@ -859,6 +893,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.output = vec!["hello world".into()];
         state.start_selection(0, 0);
@@ -872,6 +908,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.output = vec!["line one".into(), "line two".into()];
         state.start_selection(0, 5);
@@ -886,6 +924,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         assert_eq!(state.get_selected_text(), None);
     }
@@ -896,6 +936,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         state.output = vec!["aaaa".into(), "bbbb".into(), "cccc".into()];
         state.start_selection(0, 0);
@@ -910,6 +952,8 @@ mod tests {
             name: "t".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: crate::config::models::Auth::Password { vault_key: "x".into() },
             tags: vec![], pinned: false,
+                                                            last_connected: None,
+                                                            connection_count: 0,
         });
         assert!(!state.is_selected(0, 0));
     }

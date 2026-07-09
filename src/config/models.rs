@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub servers: Vec<Server>,
+    #[serde(default)]
+    pub sort_by: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -16,6 +18,10 @@ pub struct Server {
     pub tags: Vec<String>,
     #[serde(default)]
     pub pinned: bool,
+    #[serde(default)]
+    pub last_connected: Option<String>,
+    #[serde(default)]
+    pub connection_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

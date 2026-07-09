@@ -21,6 +21,8 @@ fn test_full_config_workflow() {
                 },
                 tags: vec!["prod".to_string()],
                 pinned: true,
+                last_connected: None,
+                connection_count: 0,
             },
             Server {
                 name: "server2".to_string(),
@@ -32,8 +34,11 @@ fn test_full_config_workflow() {
                 },
                 tags: vec!["dev".to_string()],
                 pinned: false,
+                last_connected: None,
+                connection_count: 0,
             },
         ],
+        sort_by: None,
     };
 
     let config_path = test_dir.join("servers.toml");

@@ -303,12 +303,23 @@ impl InsertState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ConfirmAction {
+    DeleteServer { name: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfirmState {
+    pub action: ConfirmAction,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum InputMode {
     Normal,
     Search,
     Insert,
     Edit,
+    Confirm,
 }
 
 #[derive(Debug, PartialEq)]
@@ -335,6 +346,10 @@ pub struct App {
     pub ssh_service: SshService,
     pub sftp_service: SftpService,
     pub ssh_output_rx: Option<mpsc::UnboundedReceiver<String>>,
+    pub help_visible: bool,
+    pub confirm_state: Option<ConfirmState>,
+    pub start_time: std::time::Instant,
+    pub sort_by: Option<String>,
 }
 
 impl App {
@@ -363,6 +378,10 @@ impl App {
             ssh_service: SshService::new(),
             sftp_service: SftpService::new(),
             ssh_output_rx: None,
+            help_visible: false,
+            confirm_state: None,
+            start_time: std::time::Instant::now(),
+            sort_by: None,
         }
     }
 
@@ -382,6 +401,53 @@ impl App {
         } else {
             self.selected - 1
         };
+    }
+
+    pub fn sort_servers(&mut self) {
+        match self.sort_by.as_deref() {
+            Some("name") => {
+                self.servers.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+            Some("port") => {
+                self.servers.sort_by(|a, b| a.port.cmp(&b.port));
+            }
+            Some("last_connected") => {
+                self.servers.sort_by(|a, b| {
+                    b.last_connected.cmp(&a.last_connected)
+                });
+            }
+            Some("frequency") => {
+                self.servers.sort_by(|a, b| {
+                    b.connection_count.cmp(&a.connection_count)
+                });
+            }
+            _ => {}
+        }
+        // Pinned servers always on top
+        self.servers.sort_by(|a, b| b.pinned.cmp(&a.pinned));
+        self.filter(&self.input.clone());
+    }
+
+    pub fn cycle_sort_by(&mut self) {
+        let next = match self.sort_by.as_deref() {
+            None => Some("name"),
+            Some("name") => Some("port"),
+            Some("port") => Some("last_connected"),
+            Some("last_connected") => Some("frequency"),
+            Some("frequency") => None,
+            _ => None,
+        };
+        self.sort_by = next.map(|s| s.to_string());
+        self.sort_servers();
+
+        let label = match self.sort_by.as_deref() {
+            Some("name") => "Nome",
+            Some("port") => "Porta",
+            Some("last_connected") => "Último acesso",
+            Some("frequency") => "Frequência",
+            _ => "Padrão",
+        };
+        self.notifications.info(&format!("Ordenado por: {}", label));
     }
 
     pub fn selected_server(&self) -> Option<&Server> {
@@ -635,6 +701,8 @@ mod tests {
                 },
                 tags: vec!["prod".to_string()],
                 pinned: false,
+                last_connected: None,
+                connection_count: 0,
             },
             Server {
                 name: "server2".to_string(),
@@ -646,6 +714,8 @@ mod tests {
                 },
                 tags: vec!["dev".to_string()],
                 pinned: true,
+                last_connected: None,
+                connection_count: 0,
             },
         ]
     }
@@ -720,6 +790,7 @@ mod tests {
             user: "admin".into(),
             auth: Auth::Key { path: "~/.ssh/id_ed25519".into(), passphrase: Some("secret".into()) },
             tags: vec![], pinned: true,
+            last_connected: None, connection_count: 0,
         };
         let es = EditState::from_server(&server, 0);
         assert_eq!(es.name, "editme");
@@ -735,6 +806,7 @@ mod tests {
             name: "p".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: Auth::Password { vault_key: "vk".into() },
             tags: vec![], pinned: false,
+            last_connected: None, connection_count: 0,
         };
         let es = EditState::from_server(&server, 0);
         assert!(!es.is_key_auth());

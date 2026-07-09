@@ -47,13 +47,11 @@ impl Theme {
     pub fn input_style() -> Style {
         Style::default()
             .fg(Self::text())
-            .bg(Color::Black)
     }
 
     pub fn input_active_style() -> Style {
         Style::default()
             .fg(Self::primary())
-            .bg(Color::Black)
             .add_modifier(Modifier::BOLD)
     }
 
@@ -81,6 +79,16 @@ impl Theme {
     pub fn dim_style() -> Style {
         Style::default()
             .fg(Self::text_dim())
+    }
+
+    pub fn tag_color(name: &str) -> Color {
+        let hash: u32 = name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+        let colors = [
+            Color::Cyan, Color::Blue, Color::Magenta, Color::Green,
+            Color::Yellow, Color::Red, Color::LightCyan, Color::LightBlue,
+            Color::LightMagenta, Color::LightGreen,
+        ];
+        colors[hash as usize % colors.len()]
     }
 }
 
@@ -165,14 +173,12 @@ mod tests {
     fn test_input_style() {
         let s = Theme::input_style();
         assert_eq!(s.fg, Some(Color::White));
-        assert_eq!(s.bg, Some(Color::Black));
     }
 
     #[test]
     fn test_input_active_style() {
         let s = Theme::input_active_style();
         assert_eq!(s.fg, Some(Color::Cyan));
-        assert_eq!(s.bg, Some(Color::Black));
         assert!(s.add_modifier.contains(Modifier::BOLD));
     }
 

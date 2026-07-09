@@ -1,15 +1,17 @@
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
 use super::app::App;
+use super::help::render_status_bar;
 use super::theme::Theme;
 
 pub fn render_server_list(f: &mut Frame, app: &App) {
+    let area = f.area();
     let chunks = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
         .margin(1)
@@ -18,7 +20,7 @@ pub fn render_server_list(f: &mut Frame, app: &App) {
             Constraint::Min(0),
             Constraint::Length(3),
         ])
-        .split(f.area());
+        .split(area);
 
     // Search bar
     let search_style = if app.input_mode == super::app::InputMode::Search {
@@ -38,6 +40,13 @@ pub fn render_server_list(f: &mut Frame, app: &App) {
         .style(search_style);
     f.render_widget(search_input, chunks[0]);
 
+    // Position cursor at end of search input when in search mode
+    if app.input_mode == super::app::InputMode::Search {
+        let cursor_x = chunks[0].x + 1 + app.input.len() as u16;
+        let cursor_y = chunks[0].y + 1;
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
+
     // Server list
     let items: Vec<ListItem> = app
         .filtered_indices
@@ -52,22 +61,34 @@ pub fn render_server_list(f: &mut Frame, app: &App) {
 
             let pin_icon = if server.pinned { "📌 " } else { "   " };
 
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(pin_icon, style),
                 Span::styled(&server.name, Style::default().fg(Theme::primary()).add_modifier(Modifier::BOLD)),
                 Span::styled(" → ", Style::default().fg(Theme::text_dim())),
                 Span::styled(&server.host, Style::default().fg(Theme::text())),
                 Span::styled(":", Style::default().fg(Theme::text_dim())),
                 Span::styled(server.port.to_string(), Style::default().fg(Theme::secondary())),
-                if server.tags.is_empty() {
-                    Span::raw("")
-                } else {
-                    Span::styled(
-                        format!(" [{}]", server.tags.join(", ")),
-                        Style::default().fg(Theme::text_dim()),
-                    )
-                },
-            ]);
+            ];
+
+            let max_tags = 5;
+            let visible_tags: Vec<&str> = server.tags.iter().take(max_tags).map(|s| s.as_str()).collect();
+            let overflow = server.tags.len().saturating_sub(max_tags);
+
+            for tag in &visible_tags {
+                let color = Theme::tag_color(tag);
+                spans.push(Span::styled(
+                    format!(" {} ", tag),
+                    Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD),
+                ));
+            }
+            if overflow > 0 {
+                spans.push(Span::styled(
+                    format!(" +{}", overflow),
+                    Style::default().fg(Theme::text_dim()),
+                ));
+            }
+
+            let line = Line::from(spans);
 
             ListItem::new(line)
         })
@@ -88,21 +109,6 @@ pub fn render_server_list(f: &mut Frame, app: &App) {
     state.select(Some(app.selected));
     f.render_stateful_widget(list, chunks[1], &mut state);
 
-    // Help bar
-    let help_text = Line::from(vec![
-        Span::styled("⏎ Connect ", Style::default().fg(Theme::success())),
-        Span::styled("s SFTP ", Style::default().fg(Theme::success())),
-        Span::styled("a Add ", Style::default().fg(Theme::success())),
-        Span::styled("e Edit ", Style::default().fg(Theme::success())),
-        Span::styled("d Delete ", Style::default().fg(Theme::warning())),
-        Span::styled("p Pin ", Style::default().fg(Theme::success())),
-        Span::styled("q Quit ", Style::default().fg(Theme::error())),
-    ]);
-
-    let help = Paragraph::new(help_text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Theme::border_style()),
-    );
-    f.render_widget(help, chunks[2]);
+    // Status bar with footer hints
+    render_status_bar(f, chunks[2], &app.current_view, app.start_time);
 }
