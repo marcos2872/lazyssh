@@ -1,7 +1,6 @@
 pub mod app;
 pub mod effects;
 pub mod help;
-pub mod history;
 pub mod notifications;
 pub mod sftp_browser;
 pub mod server_list;

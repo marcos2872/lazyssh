@@ -361,7 +361,6 @@ pub struct App {
     pub confirm_state: Option<ConfirmState>,
     pub start_time: std::time::Instant,
     pub sort_by: Option<String>,
-    pub command_history: crate::tui::history::CommandHistory,
 }
 
 impl App {
@@ -394,7 +393,6 @@ impl App {
             start_time: std::time::Instant::now(),
             sort_by: None,
             sftp_op_rx: None,
-            command_history: crate::tui::history::CommandHistory::new(),
         }
     }
 
@@ -756,33 +754,6 @@ impl App {
         // Not used — SSH opens in external shell via native_shell_handoff
     }
 
-    pub fn toggle_server_log(&mut self) {
-        if let Some(idx) = self.filtered_indices.get(self.selected).copied() {
-            if let Some(server) = self.servers.get_mut(idx) {
-                server.log_enabled = !server.log_enabled;
-                let status = if server.log_enabled { "ativado" } else { "desativado" };
-                self.notifications.info(&format!("Log para '{}': {}", server.name, status));
-                let _ = crate::config::save_config(
-                    &crate::config::AppConfig { servers: self.servers.clone(), sort_by: None },
-                    &crate::config::get_config_path(),
-                );
-            }
-        }
-    }
-
-    pub fn toggle_server_history(&mut self) {
-        if let Some(idx) = self.filtered_indices.get(self.selected).copied() {
-            if let Some(server) = self.servers.get_mut(idx) {
-                server.history_enabled = !server.history_enabled;
-                let status = if server.history_enabled { "ativado" } else { "desativado" };
-                self.notifications.info(&format!("Histórico para '{}': {}", server.name, status));
-                let _ = crate::config::save_config(
-                    &crate::config::AppConfig { servers: self.servers.clone(), sort_by: None },
-                    &crate::config::get_config_path(),
-                );
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -808,8 +779,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
             },
             Server {
                 name: "server2".to_string(),
@@ -826,8 +797,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
             },
         ]
     }
@@ -906,8 +877,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let es = EditState::from_server(&server, 0);
         assert_eq!(es.name, "editme");
@@ -927,8 +898,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let es = EditState::from_server(&server, 0);
         assert!(!es.is_key_auth());
@@ -1086,32 +1057,4 @@ mod tests {
         }
     }
 
-    // --- Server log/history toggles ---
-
-    #[test]
-    fn test_server_log_enabled_default() {
-        let s = test_servers();
-        assert!(!s[0].log_enabled);
-        assert!(!s[0].history_enabled);
-    }
-
-    #[test]
-    fn test_toggle_log() {
-        let mut app = App::new(test_servers());
-        app.selected = 0;
-        app.toggle_server_log();
-        assert!(app.servers[0].log_enabled);
-        app.toggle_server_log();
-        assert!(!app.servers[0].log_enabled);
-    }
-
-    #[test]
-    fn test_toggle_history() {
-        let mut app = App::new(test_servers());
-        app.selected = 0;
-        app.toggle_server_history();
-        assert!(app.servers[0].history_enabled);
-        app.toggle_server_history();
-        assert!(!app.servers[0].history_enabled);
-    }
 }

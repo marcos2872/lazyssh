@@ -26,8 +26,8 @@ fn test_full_config_workflow() {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
             },
             Server {
                 name: "server2".to_string(),
@@ -44,8 +44,8 @@ fn test_full_config_workflow() {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
             },
         ],
         sort_by: None,

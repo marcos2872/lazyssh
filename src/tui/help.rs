@@ -39,7 +39,6 @@ pub fn help_entries_for_view(view: &CurrentView) -> Vec<HelpEntry> {
             HelpEntry::new("y", "Copiar hostname"),
             HelpEntry::new("Y", "Copiar user@host:port"),
             HelpEntry::new("t", "Testar conexão"),
-            HelpEntry::new("Ctrl+L", "Toggle log por servidor"),
             HelpEntry::new("O", "Ordenar por..."),
             HelpEntry::new("f", "Mostrar favoritos"),
             HelpEntry::new("q", "Sair"),

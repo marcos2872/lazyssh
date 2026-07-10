@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, App, NotificationQueue, SftpOpResult, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, App, SftpOpResult, Theme};
 
 struct CleanupGuard;
 
@@ -89,54 +89,15 @@ fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
     ("ssh".to_string(), ssh_args)
 }
 
-fn check_script_available() -> bool {
-    std::process::Command::new("which")
-        .arg("script")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn run_native_shell_handoff(server: &config::Server, notifications: &mut NotificationQueue) -> Result<ExitStatus> {
+fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
     let (command, args) = native_shell_command(server);
-
-    // Check if script is available BEFORE leaving TUI so we can notify the user
-    let use_script = server.log_enabled && check_script_available();
-    if server.log_enabled && !use_script {
-        notifications.warning("Comando 'script' não encontrado. Log desabilitado. Instale com: sudo apt install util-linux");
-    }
 
     leave_tui()?;
 
-    let status = if use_script {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let log_dir = format!("{}/.local/share/lazyssh/logs", home);
-        let _ = std::fs::create_dir_all(&log_dir);
-        let now = chrono::Local::now();
-        let logfile = format!("{}/{}_{}.log", log_dir, server.name, now.format("%Y%m%d_%H%M%S"));
-        let mut full_cmd = command.clone();
-        for a in &args {
-            full_cmd.push(' ');
-            if a.contains(' ') {
-                full_cmd.push('"');
-                full_cmd.push_str(a);
-                full_cmd.push('"');
-            } else {
-                full_cmd.push_str(a);
-            }
-        }
-        Command::new("script")
-            .args(["-q", "-c", &full_cmd, &logfile])
-            .status()
-            .with_context(|| "failed to start `script`")?
-    } else {
-        Command::new(&command)
-            .args(args)
-            .status()
-            .with_context(|| format!("failed to start `{}`", command))?
-    };
+    let status = Command::new(&command)
+        .args(args)
+        .status()
+        .with_context(|| format!("failed to start `{}`", command))?;
 
     reenter_tui()?;
 
@@ -588,9 +549,7 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                     }
-                                    KeyCode::Char('l') if key.modifiers == KeyModifiers::CONTROL => {
-                                        app.toggle_server_log();
-                                    }
+
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
                                             let index = app.filtered_indices[app.selected];
@@ -640,7 +599,7 @@ async fn main() -> Result<()> {
                                     }
                                     KeyCode::Enter => {
                                         if let Some(server) = app.selected_server().cloned() {
-                                            match run_native_shell_handoff(&server, &mut app.notifications) {
+                                            match run_native_shell_handoff(&server) {
                                                 Ok(status) => {
                                                     let message = if status.success() {
                                                         "Conexão SSH encerrada."
@@ -704,8 +663,8 @@ async fn main() -> Result<()> {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
                                                         };
                                                         app.servers.push(server);
                                                         app.filter(&app.input.clone());
@@ -1468,7 +1427,7 @@ async fn main() -> Result<()> {
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
                                         match app.selected_server().cloned() {
-                                            Some(server) => match run_native_shell_handoff(&server, &mut app.notifications) {
+                                            Some(server) => match run_native_shell_handoff(&server) {
                                                 Ok(status) => {
                                                     let message = if status.success() {
                                                         "Conexão SSH encerrada."
@@ -1598,8 +1557,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
@@ -1624,8 +1583,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1653,8 +1612,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1683,8 +1642,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: true,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (_, args) = native_shell_command(&server);
         assert!(args.contains(&"-A".to_string()), "should contain -A flag");
@@ -1708,8 +1667,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-A".to_string()), "should NOT contain -A");
@@ -1735,8 +1694,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: Some("user@bastion.example.com".to_string()),
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (_, args) = native_shell_command(&server);
         assert!(args.contains(&"-J".to_string()), "should contain -J flag");
@@ -1761,8 +1720,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "should NOT contain -J");
@@ -1786,8 +1745,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: Some("".to_string()),
-            log_enabled: false,
-            history_enabled: false,
+
+
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "empty proxy_jump should be ignored");

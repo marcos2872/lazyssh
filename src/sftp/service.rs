@@ -501,8 +501,8 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-            log_enabled: false,
-            history_enabled: false,
+
+
         }
     }
 
