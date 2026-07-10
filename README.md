@@ -6,19 +6,24 @@ Gerenciador de conexoes SSH/SFTP em TUI (Terminal UI) escrito em Rust.
 
 - Lista de servidores persistente em TOML com busca fuzzy
 - Terminal SSH interativo com PTY (cores ANSI, scroll, selecao de texto)
-- Navegador SFTP dual-pane (local + remoto) com upload/download
+- Navegador SFTP dual-pane (local + remoto) com upload/download via SSH
 - Autenticacao por chave SSH (Ed25519, RSA, ECDSA) ou senha
 - Criptografia de senhas com AES-256-GCM + PBKDF2
 - Suporte a tags e favoritos (pinned)
 - Clipboard integrado (Wayland e X11)
 - Operacao nativa via russh (sem depender de ssh/sshpass externo)
+- Modal de ajuda com (?) — mostra atalhos disponiveis em cada view
+- Footer contextual com dicas de teclas
+- Ordenacao de servidores por nome/conexao
+- Upload/download via SSH (sem limite de 1GB do SFTP)
+- Timer de transferencia (MM:SS)
 
 ## Instalacao
 
 ### Dependencias
 
 - Rust toolchain (edition 2021)
-- Opcional: `sshpass` para fallback de autenticacao por senha via SSH externo
+- `sshpass` para autenticacao por senha em upload/download via SSH
 
 ### Compilar
 
@@ -106,9 +111,12 @@ O arquivo de configuracao tem backup automatico em `.toml.backup` antes de qualq
 | `s` | Abrir SFTP (navegador de arquivos) |
 | `a` | Adicionar novo servidor |
 | `e` | Editar servidor selecionado |
-| `d` | Deletar servidor selecionado |
+| `d` | Deletar servidor selecionado (com confirmacao) |
 | `p` | Fixar/desselecionar servidor no topo |
 | `/` | Ativar busca fuzzy |
+| `?` | Abrir modal de ajuda |
+| `y` / `Y` | Copiar hostname/senha para clipboard |
+| `O` | Alternar ordenacao (nome/conexao) |
 | `q` | Sair |
 
 ### Terminal SSH
@@ -134,8 +142,14 @@ A saida do terminal e renderizada com cores ANSI preservadas (SGR sequences com 
 | `Backspace` | Voltar ao diretorio pai |
 | `Space` | Selecionar/desselecionar arquivo |
 | `a` | Selecionar todos os arquivos |
-| `u` | Upload (envia arquivos selecionados do Local) |
-| `d` | Download (baixa arquivos selecionados do Remoto) |
+| `u` | Upload via SSH (envia arquivos selecionados) |
+| `d` | Download via SSH (baixa arquivos selecionados) |
+| `M` | Criar diretorio remoto |
+| `R` | Renomear arquivo/diretorio remoto |
+| `x` | Remover arquivo/diretorio remoto (com confirmacao) |
+| `m` | Alterar permissoes (chmod) |
+| `b` | Adicionar bookmark no diretorio atual |
+| `B` | Abrir gerenciador de bookmarks |
 | `r` | Atualizar listagem |
 | `q` / `Esc` | Voltar a lista de servidores |
 | `j`/`k` ou `Down`/`Up` | Navegar |
@@ -159,6 +173,7 @@ src/
     ├── ssh_terminal.rs  # Terminal SSH com parsing ANSI e selecao
     ├── sftp_browser.rs  # Navegador dual-pane SFTP
     ├── notifications.rs # Fila de notificacoes com timeout
+    ├── help.rs          # Modal de ajuda, footer contextual, status bar
     ├── effects.rs       # Efeitos visuais (tachyonfx)
     └── theme.rs         # Paleta de cores e estilos
 ```
@@ -166,9 +181,10 @@ src/
 ### Decisoes de design
 
 - **SSH nativo (russh):** substitui ssh/sshpass externo por cliente SSH em Rust puro, com sessao persistente e PTY real.
-- **Async + sync bridge:** SSS/SFTP rodam em tasks tokio assincronas; o event loop do ratatui e sincrono. A comunicacao entre eles e feita via `mpsc::unbounded_channel` com `block_in_place()` para sincronizar operacoes async.
-- **ANSI parseado, nao stripped:** o parser `parse_ansi_spans()` converte sequences SGR diretamente para Styles do ratatui, preservando cores e formatacao do servidor remoto. Sequencias de controle nao-SGR sao descartadas.
-- **Dual-pane SFTP:** navegacao local e remota lado a lado, com selecao multipla e barra de progresso de transferencia.
+- **Upload/download via SSH:** usa `cat local | ssh user@host cat > remote` para uploads e `ssh user@host cat remote > local` para downloads — sem limite de 1GB do SFTP. TUI fica responsiva via spawn_blocking.
+- **Async + sync bridge:** SSH/SFTP rodam em tasks tokio assincronas; o event loop do ratatui e sincrono. A comunicacao entre eles e feita via `mpsc::unbounded_channel` com `block_in_place()` para sincronizar operacoes async.
+- **ANSI parseado, nao stripped:** o parser `parse_ansi_spans()` converte sequences SGR diretamente para Styles do ratatui, preservando cores e formatacao do servidor remoto.
+- **Dual-pane SFTP:** navegacao local e remota lado a lado, com selecao multipla, bookmarks, mkdir, rename, chmod.
 - **TOML como config:** formato simples, editavel manualmente, com backup automatico.
 
 ## Licenca
