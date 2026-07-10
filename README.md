@@ -23,13 +23,35 @@ Gerenciador de conexoes SSH/SFTP em TUI (Terminal UI) escrito em Rust.
 
 ## Instalacao
 
-### Dependencias
+### Instalacao rapida (Linux e macOS)
 
-- Rust toolchain (edition 2021)
-- `sshpass` para autenticacao por senha em upload/download via SSH
-- Keyring do OS (GNOME Keyring, KDE Wallet, ou macOS Keychain) para armazenamento seguro de senhas
+```bash
+curl -fsSL https://raw.githubusercontent.com/marcos2872/lazyssh/master/install.sh | bash
+```
 
-### Compilar
+O script detecta automaticamente a plataforma (Linux/macOS, x86_64/arm64), baixa o binario e configura o PATH.
+
+**Suporte a shells:** bash, zsh, fish
+
+### Download manual
+
+Acesse a [releases page](https://github.com/marcos2872/lazyssh/releases) e baixe o arquivo correspondente a sua plataforma:
+
+| Arquivo | Plataforma |
+|---------|-----------|
+| `lazyssh-v0.1.0-linux-x86_64.tar.gz` | Linux x86_64 |
+| `lazyssh-v0.1.0-linux-aarch64.tar.gz` | Linux ARM64 (quando disponivel) |
+| `lazyssh-v0.1.0-macos-x86_64.tar.gz` | macOS Intel (quando disponivel) |
+| `lazyssh-v0.1.0-macos-aarch64.tar.gz` | macOS Apple Silicon (quando disponivel) |
+
+```bash
+# Exemplo: Linux x86_64
+tar xzf lazyssh-v0.1.0-linux-x86_64.tar.gz
+chmod +x lazyssh
+sudo mv lazyssh /usr/local/bin/
+```
+
+### Compilar a partir do codigo
 
 ```bash
 git clone https://github.com/marcos2872/lazyssh
@@ -37,13 +59,12 @@ cd lazyssh
 cargo build --release
 ```
 
-### Executar
-
-```bash
-cargo run --release
-```
-
 O binario estara em `./target/release/lazyssh`.
+
+### Dependencias
+
+- `sshpass` para autenticacao por senha em upload/download via SSH
+- Keyring do OS (GNOME Keyring, KDE Wallet, ou macOS Keychain) para armazenamento seguro de senhas
 
 ## Configuracao
 
