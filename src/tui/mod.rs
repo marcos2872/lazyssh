@@ -1,6 +1,7 @@
 pub mod app;
 pub mod effects;
 pub mod help;
+pub mod history;
 pub mod notifications;
 pub mod sftp_browser;
 pub mod server_list;
@@ -13,5 +14,5 @@ pub use help::{footer_hint_for_view, render_help_modal};
 pub use notifications::{render_notifications, NotificationQueue};
 pub use sftp_browser::{format_size, render_sftp_browser, Side, SftpState, TransferProgress};
 pub use server_list::render_server_list;
-pub use ssh_terminal::render_ssh_terminal;
+pub use ssh_terminal::{render_ssh_terminal, render_tab_bar};
 pub use theme::Theme;

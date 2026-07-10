@@ -34,6 +34,8 @@ pub struct Server {
     pub agent_forwarding: bool,
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    #[serde(default)]
+    pub log_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

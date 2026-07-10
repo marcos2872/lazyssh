@@ -341,6 +341,17 @@ pub enum SftpOpResult {
     Error(String),
 }
 
+pub struct SshTab {
+    pub state: SshTerminalState,
+    pub output_rx: Option<mpsc::UnboundedReceiver<String>>,
+    pub label: String,
+    pub log_file: Option<std::fs::File>,
+    pub log_enabled: bool,
+    pub input_buffer: String,
+}
+
+pub const MAX_SSH_TABS: usize = 8;
+
 pub struct App {
     pub servers: Vec<Server>,
     pub filtered_indices: Vec<usize>,
@@ -350,20 +361,21 @@ pub struct App {
     pub input: String,
     pub should_quit: bool,
     pub sftp_state: Option<SftpState>,
-    pub ssh_state: Option<SshTerminalState>,
+    pub ssh_tabs: Vec<SshTab>,
+    pub active_ssh_tab: usize,
     pub insert_state: Option<InsertState>,
     pub edit_state: Option<EditState>,
     pub notifications: NotificationQueue,
     pub effects: AppEffects,
     pub ssh_service: SshService,
     pub sftp_service: std::sync::Arc<std::sync::Mutex<SftpService>>,
-    pub ssh_output_rx: Option<mpsc::UnboundedReceiver<String>>,
     pub sftp_progress_rx: Option<mpsc::UnboundedReceiver<u64>>,
     pub sftp_op_rx: Option<mpsc::UnboundedReceiver<SftpOpResult>>,
     pub help_visible: bool,
     pub confirm_state: Option<ConfirmState>,
     pub start_time: std::time::Instant,
     pub sort_by: Option<String>,
+    pub command_history: crate::tui::history::CommandHistory,
 }
 
 impl App {
@@ -384,20 +396,21 @@ impl App {
             input: String::new(),
             should_quit: false,
             sftp_state: None,
-            ssh_state: None,
+            ssh_tabs: Vec::new(),
+            active_ssh_tab: 0,
             insert_state: None,
             edit_state: None,
             notifications,
             effects: AppEffects::new(),
             ssh_service: SshService::new(),
             sftp_service: std::sync::Arc::new(std::sync::Mutex::new(SftpService::new())),
-            ssh_output_rx: None,
             sftp_progress_rx: None,
             help_visible: false,
             confirm_state: None,
             start_time: std::time::Instant::now(),
             sort_by: None,
             sftp_op_rx: None,
+            command_history: crate::tui::history::CommandHistory::new(),
         }
     }
 
@@ -756,6 +769,10 @@ impl App {
     }
 
     pub fn connect_ssh(&mut self) {
+        if self.ssh_tabs.len() >= MAX_SSH_TABS {
+            self.notifications.warning(&format!("Máximo de {} abas SSH", MAX_SSH_TABS));
+            return;
+        }
         if let Some(server) = self.selected_server() {
             let server = server.clone();
             self.notifications
@@ -806,9 +823,20 @@ impl App {
                                 }
                             });
 
-                            self.ssh_output_rx = Some(output_rx);
                             state.set_connected(session_id);
                             state.shell_writer = Some(channel.writer.clone());
+
+                            let tab = SshTab {
+                                state,
+                                output_rx: Some(output_rx),
+                                label: server.name.clone(),
+                                log_file: None,
+                                log_enabled: false,
+                                input_buffer: String::new(),
+                            };
+                            self.ssh_tabs.push(tab);
+                            self.active_ssh_tab = self.ssh_tabs.len() - 1;
+
                             self.notifications
                                 .success(&format!("Conectado a {}!", server.name));
                         }
@@ -825,24 +853,102 @@ impl App {
                         .error(&format!("Falha ao conectar: {}", e));
                 }
             }
-
-            self.ssh_state = Some(state);
         }
     }
 
     pub fn close_ssh(&mut self) {
-        // Disconnect SSH session from service
-        if let Some(ssh) = &self.ssh_state {
-            if let Some(ref session_id) = ssh.session_id {
+        if self.active_ssh_tab < self.ssh_tabs.len() {
+            let tab = &self.ssh_tabs[self.active_ssh_tab];
+            if let Some(ref session_id) = tab.state.session_id {
                 let ssh_service = &mut self.ssh_service;
                 let _ = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
                         .block_on(ssh_service.disconnect(session_id))
                 });
             }
+            self.ssh_tabs.remove(self.active_ssh_tab);
+            if self.ssh_tabs.is_empty() {
+                self.current_view = CurrentView::ServerList;
+                self.active_ssh_tab = 0;
+            } else {
+                if self.active_ssh_tab >= self.ssh_tabs.len() {
+                    self.active_ssh_tab = self.ssh_tabs.len() - 1;
+                }
+            }
         }
-        self.current_view = CurrentView::ServerList;
-        self.ssh_state = None;
+    }
+
+    pub fn close_active_tab(&mut self) {
+        self.close_ssh();
+    }
+
+    pub fn next_tab(&mut self) {
+        if self.ssh_tabs.len() > 1 {
+            self.active_ssh_tab = (self.active_ssh_tab + 1) % self.ssh_tabs.len();
+        }
+    }
+
+    pub fn prev_tab(&mut self) {
+        if self.ssh_tabs.len() > 1 {
+            self.active_ssh_tab = if self.active_ssh_tab == 0 {
+                self.ssh_tabs.len() - 1
+            } else {
+                self.active_ssh_tab - 1
+            };
+        }
+    }
+
+    pub fn active_ssh_tab_mut(&mut self) -> Option<&mut SshTab> {
+        self.ssh_tabs.get_mut(self.active_ssh_tab)
+    }
+
+    pub fn active_ssh_tab_ref(&self) -> Option<&SshTab> {
+        self.ssh_tabs.get(self.active_ssh_tab)
+    }
+
+    pub fn toggle_ssh_log(&mut self) {
+        if let Some(tab) = self.ssh_tabs.get_mut(self.active_ssh_tab) {
+            if tab.log_enabled {
+                // Disable logging
+                tab.log_enabled = false;
+                tab.log_file = None;
+                self.notifications.info("Log de sessão desativado");
+            } else {
+                // Enable logging
+                let home = std::env::var("HOME").unwrap_or_default();
+                let log_dir = format!("{}/.local/share/lazyssh/logs", home);
+                let _ = std::fs::create_dir_all(&log_dir);
+                let now = chrono::Local::now();
+                let filename = format!(
+                    "{}/{}_{}.log",
+                    log_dir,
+                    tab.label,
+                    now.format("%Y%m%d_%H%M%S")
+                );
+                match std::fs::File::create(&filename) {
+                    Ok(f) => {
+                        tab.log_file = Some(f);
+                        tab.log_enabled = true;
+                        self.notifications.success(&format!("Log: {}", filename));
+                    }
+                    Err(e) => {
+                        self.notifications.error(&format!("Erro ao criar log: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn write_ssh_log(&mut self, data: &str) {
+        if let Some(tab) = self.ssh_tabs.get_mut(self.active_ssh_tab) {
+            if tab.log_enabled {
+                if let Some(ref mut f) = tab.log_file {
+                    use std::io::Write;
+                    let _ = f.write_all(data.as_bytes());
+                    let _ = f.flush();
+                }
+            }
+        }
     }
 }
 
@@ -869,6 +975,7 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
+            log_enabled: false,
             },
             Server {
                 name: "server2".to_string(),
@@ -885,6 +992,7 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
+            log_enabled: false,
             },
         ]
     }
@@ -963,6 +1071,7 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
+            log_enabled: false,
         };
         let es = EditState::from_server(&server, 0);
         assert_eq!(es.name, "editme");
@@ -982,6 +1091,7 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
+            log_enabled: false,
         };
         let es = EditState::from_server(&server, 0);
         assert!(!es.is_key_auth());
@@ -1137,5 +1247,49 @@ mod tests {
             }
             _ => panic!("expected Key"),
         }
+    }
+
+    // --- SSH Tabs (T4.1) ---
+
+    fn make_test_app() -> App {
+        App::new(vec![])
+    }
+
+    #[test]
+    fn test_new_app_has_no_tabs() {
+        let app = make_test_app();
+        assert!(app.ssh_tabs.is_empty());
+        assert_eq!(app.active_ssh_tab, 0);
+    }
+
+    #[test]
+    fn test_next_tab_no_tabs() {
+        let mut app = make_test_app();
+        app.next_tab(); // no-op
+        assert_eq!(app.active_ssh_tab, 0);
+    }
+
+    #[test]
+    fn test_prev_tab_no_tabs() {
+        let mut app = make_test_app();
+        app.prev_tab(); // no-op
+        assert_eq!(app.active_ssh_tab, 0);
+    }
+
+    #[test]
+    fn test_active_ssh_tab_ref_none_when_empty() {
+        let app = make_test_app();
+        assert!(app.active_ssh_tab_ref().is_none());
+    }
+
+    #[test]
+    fn test_active_ssh_tab_mut_none_when_empty() {
+        let mut app = make_test_app();
+        assert!(app.active_ssh_tab_mut().is_none());
+    }
+
+    #[test]
+    fn test_max_ssh_tabs_constant() {
+        assert_eq!(MAX_SSH_TABS, 8);
     }
 }
