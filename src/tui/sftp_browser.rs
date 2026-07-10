@@ -77,6 +77,7 @@ pub struct SftpState {
     pub session_id: Option<String>,
     pub input_mode: SftpInputMode,
     pub input_buffer: String,
+    pub transfer_start: Option<std::time::Instant>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -107,6 +108,7 @@ impl SftpState {
             session_id: None,
             input_mode: SftpInputMode::None,
             input_buffer: String::new(),
+            transfer_start: None,
         }
     }
 
@@ -275,6 +277,7 @@ impl SftpState {
 
     pub fn start_transfer(&mut self, file_name: String, total_bytes: u64, is_upload: bool) {
         self.is_transferring = true;
+        self.transfer_start = Some(Instant::now());
         self.transfer_progress = Some(TransferProgress {
             file_name,
             bytes_done: 0,
@@ -472,13 +475,21 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
 fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
     // Mostrar mensagem de transferência se ativo
     if state.is_transferring {
+        let elapsed = state.transfer_start
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let time_str = format!("{:02}:{:02}", elapsed / 60, elapsed % 60);
         let transfer_msg = Line::from(vec![
             Span::styled(
                 " ⏳ Enviando... ",
                 Style::default().fg(Theme::warning()).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "(barra de progresso em breve)",
+                &time_str,
+                Style::default().fg(Theme::text()).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " (barra de progresso em breve)",
                 Style::default().fg(Theme::text_dim()),
             ),
         ]);
