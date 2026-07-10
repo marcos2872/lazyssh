@@ -1083,16 +1083,29 @@ async fn main() -> Result<()> {
                                                         .map_err(|e| format!("SCP erro: {}", e));
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // SCP doesn't show progress by default.
-                                                            // Simulate progress while process runs.
+                                                            // CRITICAL: drain stderr so SCP doesn't block on pipe buffer
+                                                            let stderr = proc.stderr.take().unwrap();
+                                                            std::thread::spawn(move || {
+                                                                use std::io::Read;
+                                                                let mut buf = [0u8; 4096];
+                                                                let mut reader = stderr;
+                                                                loop {
+                                                                    match reader.read(&mut buf) {
+                                                                        Ok(0) => break,
+                                                                        Ok(_) => {}
+                                                                        Err(_) => break,
+                                                                    }
+                                                                }
+                                                            });
+
+                                                            // Simulate progress while process runs
                                                             let total_size: u64 = std::fs::metadata(local)
                                                                 .map(|m| m.len())
                                                                 .unwrap_or(0);
                                                             let start = std::time::Instant::now();
-                                                            // Poll process status and send progress
                                                             loop {
                                                                 match proc.try_wait() {
-                                                                    Ok(Some(_)) => break, // Process finished
+                                                                    Ok(Some(_)) => break,
                                                                     Ok(None) => {
                                                                         std::thread::sleep(std::time::Duration::from_millis(500));
                                                                         let elapsed = start.elapsed().as_secs_f64();
@@ -1103,7 +1116,7 @@ async fn main() -> Result<()> {
                                                                     Err(_) => break,
                                                                 }
                                                             }
-                                                            let _ = progress_tx2.send(total_size); // 100%
+                                                            let _ = progress_tx2.send(total_size);
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
                                                         }
                                                         Err(e) => {
