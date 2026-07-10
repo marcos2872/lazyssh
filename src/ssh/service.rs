@@ -317,6 +317,20 @@ impl SshService {
     pub fn session_count(&self) -> usize {
         self.sessions.len()
     }
+
+    /// Test TCP connectivity to a host:port with timeout.
+    pub async fn test_connection(host: &str, port: u16, timeout_secs: u64) -> Result<(), String> {
+        let addr = format!("{}:{}", host, port);
+        let sock_addr: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e| format!("Endereço inválido: {}", e))?;
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        tokio::time::timeout(timeout, tokio::net::TcpStream::connect(sock_addr))
+            .await
+            .map_err(|_| format!("Timeout após {}s — servidor inacessível", timeout_secs))?
+            .map_err(|e| format!("Falha na conexão TCP: {}", e))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -354,6 +368,8 @@ mod tests {
         last_connected: None,
         connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         }
     }
 

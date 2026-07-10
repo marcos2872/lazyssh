@@ -466,6 +466,49 @@ impl App {
         self.notifications.info(&format!("Ordenado por: {}", label));
     }
 
+    pub fn import_ssh_config(&mut self) {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let config_path = std::path::PathBuf::from(format!("{}/.ssh/config", home));
+        let imported = crate::config::ssh_config::parse_ssh_config(&config_path);
+
+        if imported.is_empty() {
+            self.notifications.warning("Nenhum servidor encontrado em ~/.ssh/config");
+            return;
+        }
+
+        let mut added = 0;
+        let mut skipped = 0;
+        for server in imported {
+            let key = format!("{}:{}:{}", server.host, server.port, server.user);
+            let exists = self.servers.iter().any(|s| {
+                format!("{}:{}:{}", s.host, s.port, s.user) == key
+            });
+            if exists {
+                skipped += 1;
+            } else {
+                self.servers.push(server);
+                added += 1;
+            }
+        }
+
+        if added > 0 {
+            self.filtered_indices = (0..self.servers.len()).collect();
+            self.selected = 0;
+            let _ = crate::config::save_config(
+                &crate::config::AppConfig {
+                    servers: self.servers.clone(),
+                    sort_by: None,
+                },
+                &crate::config::get_config_path(),
+            );
+        }
+
+        self.notifications.info(&format!(
+            "Importados {} servidor(es), {} ignorado(s)",
+            added, skipped
+        ));
+    }
+
     pub fn selected_server(&self) -> Option<&Server> {
         self.filtered_indices
             .get(self.selected)
@@ -824,6 +867,8 @@ mod tests {
                 last_connected: None,
                 connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
             },
             Server {
                 name: "server2".to_string(),
@@ -838,6 +883,8 @@ mod tests {
                 last_connected: None,
                 connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
             },
         ]
     }
@@ -914,6 +961,8 @@ mod tests {
             tags: vec![], pinned: true,
             last_connected: None, connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         };
         let es = EditState::from_server(&server, 0);
         assert_eq!(es.name, "editme");
@@ -931,6 +980,8 @@ mod tests {
             tags: vec![], pinned: false,
             last_connected: None, connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         };
         let es = EditState::from_server(&server, 0);
         assert!(!es.is_key_auth());

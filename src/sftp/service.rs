@@ -499,6 +499,8 @@ mod tests {
             last_connected: None,
             connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         }
     }
 

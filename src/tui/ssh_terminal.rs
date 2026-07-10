@@ -659,6 +659,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.feed_output("before\x1b[2Jafter");
         assert!(state.output.is_empty(), "[2J should clear output");
@@ -678,6 +680,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.feed_output("line1\rline2\r\x1b[2J\x1b[Hclean");
         assert!(state.output.is_empty(), "output should be cleared");
@@ -697,6 +701,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.feed_output("keep\r");
         assert!(!state.output.is_empty(), "\\r should push line to output");
@@ -717,6 +723,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
         assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
@@ -735,6 +743,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         assert!(matches!(state.status, SshStatus::Connecting));
         assert_eq!(state.server_name, "test");
@@ -750,6 +760,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.set_connected("sid123".into());
         assert!(matches!(state.status, SshStatus::Connected));
@@ -765,6 +777,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.set_error("connection refused".into());
         assert!(matches!(state.status, SshStatus::Error(_)));
@@ -780,6 +794,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.set_disconnected();
         assert!(matches!(state.status, SshStatus::Disconnected));
@@ -794,6 +810,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.output = vec!["a".into(), "b".into(), "c".into()];
         state.scroll_up(2);
@@ -811,6 +829,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.output = vec!["a".into()];
         state.scroll_up(999);
@@ -826,6 +846,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.scroll_offset = 5;
         state.scroll_to_bottom();
@@ -841,6 +863,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.add_output("line1".into());
         assert_eq!(state.output, vec!["line1"]);
@@ -855,6 +879,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.current_line = "pending".into();
         assert!(state.output.is_empty());
@@ -872,6 +898,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.start_selection(0, 3);
         assert!(state.is_selecting);
@@ -895,6 +923,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.start_selection(0, 0);
         state.clear_selection();
@@ -911,6 +941,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.output = vec!["hello world".into()];
         state.start_selection(0, 0);
@@ -927,6 +959,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.output = vec!["line one".into(), "line two".into()];
         state.start_selection(0, 5);
@@ -944,6 +978,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         assert_eq!(state.get_selected_text(), None);
     }
@@ -957,6 +993,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         state.output = vec!["aaaa".into(), "bbbb".into(), "cccc".into()];
         state.start_selection(0, 0);
@@ -974,6 +1012,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
                                                             bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
         });
         assert!(!state.is_selected(0, 0));
     }

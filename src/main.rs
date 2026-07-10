@@ -53,6 +53,17 @@ fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
         ssh_args.push(server.port.to_string());
     }
 
+    if server.agent_forwarding {
+        ssh_args.push("-A".to_string());
+    }
+
+    if let Some(ref jump) = server.proxy_jump {
+        if !jump.is_empty() {
+            ssh_args.push("-J".to_string());
+            ssh_args.push(jump.clone());
+        }
+    }
+
     match &server.auth {
         crate::config::models::Auth::Key { path, .. } => {
             let expanded = shellexpand::tilde(path).into_owned();
@@ -549,6 +560,26 @@ async fn main() -> Result<()> {
                                         app.insert_state = Some(tui::app::InsertState::new());
                                         app.input_mode = tui::app::InputMode::Insert;
                                     }
+                                    KeyCode::Char('i') => {
+                                        app.import_ssh_config();
+                                    }
+                                    KeyCode::Char('t') => {
+                                        if let Some(server) = app.selected_server().cloned() {
+                                            app.notifications.info(&format!("Testando conexão {}...", server.name));
+                                            let host = server.host.clone();
+                                            let port = server.port;
+                                            let name = server.name.clone();
+                                            let result = tokio::task::block_in_place(|| {
+                                                tokio::runtime::Handle::current().block_on(async {
+                                                    crate::ssh::service::SshService::test_connection(&host, port, 5).await
+                                                })
+                                            });
+                                            match result {
+                                                Ok(()) => app.notifications.success(&format!("{}: Servidor acessível ✓", name)),
+                                                Err(e) => app.notifications.error(&format!("{}: {}", name, e)),
+                                            }
+                                        }
+                                    }
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
                                             let index = app.filtered_indices[app.selected];
@@ -660,6 +691,8 @@ async fn main() -> Result<()> {
                                                             last_connected: None,
                                                             connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
                                                         };
                                                         app.servers.push(server);
                                                         app.filter(&app.input.clone());
@@ -1636,6 +1669,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
@@ -1658,6 +1693,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1683,6 +1720,8 @@ mod tests {
                                                             last_connected: None,
                                                             connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");

@@ -24,6 +24,8 @@ fn test_full_config_workflow() {
                 last_connected: None,
                 connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
             },
             Server {
                 name: "server2".to_string(),
@@ -38,6 +40,8 @@ fn test_full_config_workflow() {
                 last_connected: None,
                 connection_count: 0,
             bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
             },
         ],
         sort_by: None,

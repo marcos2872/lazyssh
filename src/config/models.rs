@@ -30,6 +30,10 @@ pub struct Server {
     pub connection_count: u32,
     #[serde(default)]
     pub bookmarks: Vec<ServerBookmark>,
+    #[serde(default)]
+    pub agent_forwarding: bool,
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
