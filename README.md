@@ -5,18 +5,21 @@ Gerenciador de conexoes SSH/SFTP em TUI (Terminal UI) escrito em Rust.
 ## Funcionalidades
 
 - Lista de servidores persistente em TOML com busca fuzzy
-- Terminal SSH interativo com PTY (cores ANSI, scroll, selecao de texto)
+- Terminal SSH interativo via shell externo (native handoff)
 - Navegador SFTP dual-pane (local + remoto) com upload/download via SSH
 - Autenticacao por chave SSH (Ed25519, RSA, ECDSA) ou senha
-- Criptografia de senhas com AES-256-GCM + PBKDF2
+- Senhas armazenadas no keyring do OS (GNOME Keyring, KDE Wallet, macOS Keychain)
 - Suporte a tags e favoritos (pinned)
-- Clipboard integrado (Wayland e X11)
-- Operacao nativa via russh (sem depender de ssh/sshpass externo)
+- Clipboard integrado (Wayland, X11, arboard)
+- Import de ~/.ssh/config
+- Teste de conectividade TCP
+- SSH Agent Forwarding (-A) e ProxyJump (-J)
 - Modal de ajuda com (?) — mostra atalhos disponiveis em cada view
 - Footer contextual com dicas de teclas
-- Ordenacao de servidores por nome/conexao
+- Ordenacao de servidores por nome/porta/frequencia
 - Upload/download via SSH (sem limite de 1GB do SFTP)
 - Timer de transferencia (MM:SS)
+- Input com cursor navigation (setas, Home, End, Delete)
 
 ## Instalacao
 
@@ -24,6 +27,7 @@ Gerenciador de conexoes SSH/SFTP em TUI (Terminal UI) escrito em Rust.
 
 - Rust toolchain (edition 2021)
 - `sshpass` para autenticacao por senha em upload/download via SSH
+- Keyring do OS (GNOME Keyring, KDE Wallet, ou macOS Keychain) para armazenamento seguro de senhas
 
 ### Compilar
 
@@ -53,6 +57,8 @@ port = 22
 user = "root"
 tags = ["dev", "internal"]
 pinned = true
+agent_forwarding = false
+proxy_jump = "user@bastion.com"
 
 [servers.auth]
 type = "key"
@@ -67,20 +73,22 @@ user = "admin"
 
 [servers.auth]
 type = "password"
-vault_key = "minha-senha-aqui"
+vault_key = ""
 ```
 
 ### Schema
 
 | Campo | Tipo | Descricao |
 |-------|------|-----------|
-| `name` | string | Nome do servidor (usado para exibicao na lista) |
+| `name` | string | Nome do servidor |
 | `host` | string | Endereco IP ou hostname |
 | `port` | int | Porta SSH (padrao 22) |
 | `user` | string | Usuario de login |
 | `tags` | string[] | Tags para filtro (opcional) |
 | `pinned` | bool | Fixar no topo da lista (opcional) |
 | `auth` | Auth | Autenticacao (ver abaixo) |
+| `agent_forwarding` | bool | Habilitar -A no SSH (opcional) |
+| `proxy_jump` | string? | Host de salto -J (opcional) |
 
 ### Auth
 
@@ -95,7 +103,7 @@ vault_key = "minha-senha-aqui"
 
 | Campo | Tipo | Descricao |
 |-------|------|-----------|
-| `vault_key` | string | Senha (armazenada criptografada no vault) |
+| `vault_key` | string | Senha (armazenada no keyring do OS; campo fica vazio no TOML) |
 
 O arquivo de configuracao tem backup automatico em `.toml.backup` antes de qualquer salvamento.
 
@@ -107,52 +115,68 @@ O arquivo de configuracao tem backup automatico em `.toml.backup` antes de qualq
 |-------|------|
 | `j` / `Down` | Navegar para baixo |
 | `k` / `Up` | Navegar para cima |
-| `Enter` | Conectar SSH no servidor selecionado |
-| `s` | Abrir SFTP (navegador de arquivos) |
-| `a` | Adicionar novo servidor |
-| `e` | Editar servidor selecionado |
-| `d` | Deletar servidor selecionado (com confirmacao) |
-| `p` | Fixar/desselecionar servidor no topo |
-| `/` | Ativar busca fuzzy |
-| `?` | Abrir modal de ajuda |
-| `y` / `Y` | Copiar hostname/senha para clipboard |
-| `O` | Alternar ordenacao (nome/conexao) |
+| `Enter` | Conectar SSH (shell externo) |
+| `s` | Abrir SFTP |
+| `a` | Adicionar servidor (modal) |
+| `e` | Editar servidor (modal) |
+| `d` | Deletar servidor (com confirmacao) |
+| `p` | Fixar/desafixar no topo |
+| `/` | Busca fuzzy |
+| `i` | Importar de ~/.ssh/config |
+| `t` | Testar conectividade TCP |
+| `y` | Copiar hostname para clipboard |
+| `Y` | Copiar user@host:port para clipboard |
+| `O` | Ciclar ordenacao |
 | `q` | Sair |
+| `?` | Modal de ajuda |
 
-### Terminal SSH
+### Modal de Adicionar/Editar
+
+Campos (ordem): Nome, Host, Porta, Usuario, Auth (toggle key/password com ← →), [Chave/Passphrase ou Senha], Tags
 
 | Tecla | Acao |
 |-------|------|
-| `Ctrl+Q` / `Esc` | Desconectar e voltar a lista |
-| `PageUp` / `PageDown` | Rolar output |
-| Scroll do mouse | Rolar output |
-| Mouse drag | Selecionar texto (copia automatica) |
-| Qualquer outra tecla | Enviada ao shell remoto |
+| `Tab` / `↓` | Proximo campo |
+| `↑` | Campo anterior |
+| `←` / `→` / `Space` | Toggle key/password (no campo Auth) |
+| `Enter` | Salvar (no campo Tags) |
+| `Esc` | Cancelar |
 
-Ao digitar `exit` no shell remoto, a conexao encerra e voce volta automaticamente a lista de servidores.
+### Terminal SSH
 
-A saida do terminal e renderizada com cores ANSI preservadas (SGR sequences com suporte a 256 cores, bold, italic, underline). Sequencias de controle nao-SGR (bracketed paste, cursor movement, OSC) sao descartadas silenciosamente.
+SSH abre em shell externo (native handoff). O terminal e resetado com `\x1bc` antes de conectar.
 
 ### Navegador SFTP
 
 | Tecla | Acao |
 |-------|------|
 | `Tab` | Alternar foco entre painel Local e Remoto |
+| `j`/`k` ou `Down`/`Up` | Navegar |
 | `Enter` | Entrar no diretorio |
 | `Backspace` | Voltar ao diretorio pai |
-| `Space` | Selecionar/desselecionar arquivo |
-| `a` | Selecionar todos os arquivos |
-| `u` | Upload via SSH (envia arquivos selecionados) |
-| `d` | Download via SSH (baixa arquivos selecionados) |
+| `Space` | Selecionar/desselecionar |
+| `a` | Selecionar todos |
+| `u` | Upload via SSH |
+| `d` | Download via SSH |
 | `M` | Criar diretorio remoto |
-| `R` | Renomear arquivo/diretorio remoto |
-| `x` | Remover arquivo/diretorio remoto (com confirmacao) |
+| `R` | Renomear arquivo/diretorio |
+| `x` | Remover arquivo/diretorio |
 | `m` | Alterar permissoes (chmod) |
-| `b` | Adicionar bookmark no diretorio atual |
-| `B` | Abrir gerenciador de bookmarks |
+| `b` | Salvar bookmark |
+| `B` | Navegar para bookmark |
 | `r` | Atualizar listagem |
-| `q` / `Esc` | Voltar a lista de servidores |
-| `j`/`k` ou `Down`/`Up` | Navegar |
+| `q` / `Esc` | Voltar a lista |
+
+### Input SFTP (Mkdir/Rename/Chmod/Bookmark)
+
+| Tecla | Acao |
+|-------|------|
+| `←` / `→` | Mover cursor |
+| `Home` / `End` | Inicio / Final do texto |
+| `Delete` | Remover caractere a direita |
+| `Backspace` | Remover caractere a esquerda |
+| `Enter` | Executar operacao |
+| `Esc` | Cancelar |
 
 ## Arquitetura
 
@@ -160,31 +184,37 @@ A saida do terminal e renderizada com cores ANSI preservadas (SGR sequences com 
 src/
 ├── main.rs              # Entry point, event loop, key/mouse dispatch
 ├── lib.rs               # Re-exports modulos
-├── config/              # Configuracao TOML (models, CRUD file)
+├── config/
+│   ├── models.rs        # Structs Server, Auth, AppConfig
+│   ├── file.rs          # CRUD do arquivo TOML com keyring integration
+│   └── ssh_config.rs    # Parser de ~/.ssh/config
 ├── ssh/
-│   └── service.rs       # Cliente SSH nativo (russh), PTY, sessao persistente
+│   ├── service.rs       # SshService (russh), test_connection
+│   └── auth.rs          # Carregamento de chaves
 ├── sftp/
-│   ├── service.rs       # Cliente SFTP nativo (russh-sftp)
+│   ├── service.rs       # SftpService (russh-sftp), filesystem ops
 │   └── local.rs         # Navegacao do filesystem local
-├── vault/               # Criptografia AES-256-GCM + PBKDF2
+├── vault/
+│   ├── crypto.rs        # AES-256-GCM + PBKDF2 (disponivel)
+│   └── keyring.rs       # Integracao com keyring do OS
 └── tui/
-    ├── app.rs           # Estado global e navegacao entre views
+    ├── app.rs           # Estado global, InsertState, EditState
     ├── server_list.rs   # Render da lista de servidores
-    ├── ssh_terminal.rs  # Terminal SSH com parsing ANSI e selecao
+    ├── ssh_terminal.rs  # Terminal SSH com parsing ANSI
     ├── sftp_browser.rs  # Navegador dual-pane SFTP
-    ├── notifications.rs # Fila de notificacoes com timeout
-    ├── help.rs          # Modal de ajuda, footer contextual, status bar
+    ├── notifications.rs # Fila de notificacoes
+    ├── help.rs          # Modal de ajuda, footer, status bar
     ├── effects.rs       # Efeitos visuais (tachyonfx)
-    └── theme.rs         # Paleta de cores e estilos
+    └── theme.rs         # Paleta de cores
 ```
 
 ### Decisoes de design
 
-- **SSH nativo (russh):** substitui ssh/sshpass externo por cliente SSH em Rust puro, com sessao persistente e PTY real.
-- **Upload/download via SSH:** usa `cat local | ssh user@host cat > remote` para uploads e `ssh user@host cat remote > local` para downloads — sem limite de 1GB do SFTP. TUI fica responsiva via spawn_blocking.
-- **Async + sync bridge:** SSH/SFTP rodam em tasks tokio assincronas; o event loop do ratatui e sincrono. A comunicacao entre eles e feita via `mpsc::unbounded_channel` com `block_in_place()` para sincronizar operacoes async.
-- **ANSI parseado, nao stripped:** o parser `parse_ansi_spans()` converte sequences SGR diretamente para Styles do ratatui, preservando cores e formatacao do servidor remoto.
-- **Dual-pane SFTP:** navegacao local e remota lado a lado, com selecao multipla, bookmarks, mkdir, rename, chmod.
+- **Shell externo para SSH:** SSH abre em processo externo (native handoff) para maxima compatibilidade. Terminal e resetado com `\x1bc` antes de conectar.
+- **Upload/download via SSH:** usa `cat local | ssh user@host cat > remote` — sem limite de 1GB do SFTP.
+- **Keyring para senhas:** senhas sao armazenadas no keyring do OS. No TOML, vault_key fica vazio. Fallback para plaintext se keyring indisponivel.
+- **ANSI parseado, nao stripped:** o parser converte SGR diretamente para Styles do ratatui.
+- **Dual-pane SFTP:** navegacao local e remota lado a lado, com selecao multipla e bookmarks.
 - **TOML como config:** formato simples, editavel manualmente, com backup automatico.
 
 ## Licenca

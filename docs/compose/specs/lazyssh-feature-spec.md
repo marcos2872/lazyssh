@@ -1,7 +1,7 @@
 # LazySSH — Feature Specification
 
 **Versão:** 0.1.0
-**Última atualização:** 2026-07-09
+**Última atualização:** 2026-07-09 (rev. 2)
 
 ---
 
@@ -169,8 +169,13 @@ Dual-pane:
 
 | Tecla | Ação |
 |-------|------|
-| `Char` | Adicionar caractere |
-| `Backspace` | Remover último caractere |
+| `←` | Mover cursor para esquerda |
+| `→` | Mover cursor para direita |
+| `Home` | Ir ao início do texto |
+| `End` | Ir ao final do texto |
+| `Char` | Inserir caractere na posição do cursor |
+| `Backspace` | Remover caractere à esquerda do cursor |
+| `Delete` | Remover caractere à direita do cursor |
 | `Enter` | Executar operação |
 | `Esc` | Cancelar |
 
