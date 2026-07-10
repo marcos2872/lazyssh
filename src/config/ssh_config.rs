@@ -58,6 +58,7 @@ pub fn parse_ssh_config(path: &Path) -> Vec<Server> {
                         agent_forwarding: false,
                         proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
                     });
                 }
                 // Start new host block (support multiple patterns — use first non-wildcard)
@@ -122,6 +123,7 @@ pub fn parse_ssh_config(path: &Path) -> Vec<Server> {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         });
     }
 

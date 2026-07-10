@@ -436,27 +436,6 @@ fn parse_ansi_spans(text: &str) -> Vec<(String, Style)> {
     segments
 }
 
-pub fn render_tab_bar(f: &mut Frame, tabs: &[crate::tui::app::SshTab], active: usize, area: ratatui::layout::Rect) {
-    let mut spans = vec![];
-    for (i, tab) in tabs.iter().enumerate() {
-        let label = format!(" {}:{} ", i + 1, tab.label);
-        let style = if i == active {
-            Style::default().fg(Theme::text()).bg(Theme::primary()).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Theme::text_dim())
-        };
-        spans.push(Span::styled(label, style));
-        if i < tabs.len() - 1 {
-            spans.push(Span::raw(" "));
-        }
-    }
-
-    let tab_bar = Paragraph::new(Line::from(spans)).block(
-        Block::default().borders(Borders::BOTTOM).border_style(Theme::border_style())
-    );
-    f.render_widget(tab_bar, area);
-}
-
 pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState, area: ratatui::layout::Rect, log_enabled: bool) {
 
     // Status bar no topo
@@ -683,6 +662,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.feed_output("before\x1b[2Jafter");
         assert!(state.output.is_empty(), "[2J should clear output");
@@ -705,6 +685,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.feed_output("line1\rline2\r\x1b[2J\x1b[Hclean");
         assert!(state.output.is_empty(), "output should be cleared");
@@ -727,6 +708,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.feed_output("keep\r");
         assert!(!state.output.is_empty(), "\\r should push line to output");
@@ -750,6 +732,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
         assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
@@ -771,6 +754,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         assert!(matches!(state.status, SshStatus::Connecting));
         assert_eq!(state.server_name, "test");
@@ -789,6 +773,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.set_connected("sid123".into());
         assert!(matches!(state.status, SshStatus::Connected));
@@ -807,6 +792,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.set_error("connection refused".into());
         assert!(matches!(state.status, SshStatus::Error(_)));
@@ -825,6 +811,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.set_disconnected();
         assert!(matches!(state.status, SshStatus::Disconnected));
@@ -842,6 +829,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.output = vec!["a".into(), "b".into(), "c".into()];
         state.scroll_up(2);
@@ -862,6 +850,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.output = vec!["a".into()];
         state.scroll_up(999);
@@ -880,6 +869,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.scroll_offset = 5;
         state.scroll_to_bottom();
@@ -898,6 +888,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.add_output("line1".into());
         assert_eq!(state.output, vec!["line1"]);
@@ -915,6 +906,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.current_line = "pending".into();
         assert!(state.output.is_empty());
@@ -935,6 +927,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.start_selection(0, 3);
         assert!(state.is_selecting);
@@ -961,6 +954,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.start_selection(0, 0);
         state.clear_selection();
@@ -980,6 +974,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.output = vec!["hello world".into()];
         state.start_selection(0, 0);
@@ -999,6 +994,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.output = vec!["line one".into(), "line two".into()];
         state.start_selection(0, 5);
@@ -1019,6 +1015,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         assert_eq!(state.get_selected_text(), None);
     }
@@ -1035,6 +1032,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         state.output = vec!["aaaa".into(), "bbbb".into(), "cccc".into()];
         state.start_selection(0, 0);
@@ -1055,6 +1053,7 @@ mod tests {
                                                             agent_forwarding: false,
                                                             proxy_jump: None,
                                                             log_enabled: false,
+                                                            history_enabled: false,
         });
         assert!(!state.is_selected(0, 0));
     }

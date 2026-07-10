@@ -36,6 +36,8 @@ pub struct Server {
     pub proxy_jump: Option<String>,
     #[serde(default)]
     pub log_enabled: bool,
+    #[serde(default)]
+    pub history_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

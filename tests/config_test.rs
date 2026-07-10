@@ -42,6 +42,7 @@ fn test_server_creation() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     };
     assert_eq!(server.name, "myserver");
     assert_eq!(server.port, 22);
@@ -84,6 +85,7 @@ fn test_config_serialization_round_trip() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         }],
         sort_by: None,
     };
@@ -112,6 +114,7 @@ fn test_config_password_serialization_round_trip() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         }],
         sort_by: None,
     };
@@ -151,6 +154,7 @@ fn test_save_and_load_config() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         }],
         sort_by: None,
     };
@@ -209,6 +213,7 @@ fn test_config_with_multiple_servers() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
             },
             Server {
                 name: "beta".to_string(),
@@ -224,6 +229,7 @@ fn test_config_with_multiple_servers() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
             },
         ],
         sort_by: None,
@@ -289,6 +295,7 @@ fn test_save_config_creates_backup() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         }],
         sort_by: None,
     };
@@ -310,6 +317,7 @@ fn test_save_config_creates_backup() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         }],
         sort_by: None,
     };
@@ -348,6 +356,7 @@ fn test_add_server_creates_entry() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -383,6 +392,7 @@ fn test_remove_server_deletes_entry() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     };
     lazyssh::config::file::add_server(server).unwrap();
     lazyssh::config::file::remove_server("to-remove").unwrap();
@@ -418,6 +428,7 @@ fn test_update_server_modifies_entry() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -435,6 +446,7 @@ fn test_update_server_modifies_entry() {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     };
     lazyssh::config::file::update_server("to-update", updated).unwrap();
 

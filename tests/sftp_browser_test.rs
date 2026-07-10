@@ -22,6 +22,7 @@ fn test_server() -> Server {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
     }
 }
 

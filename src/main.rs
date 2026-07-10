@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, render_tab_bar, App, SftpOpResult, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, SftpOpResult, Theme};
 
 struct CleanupGuard;
 
@@ -94,10 +94,23 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
 
     leave_tui()?;
 
-    let status = Command::new(&command)
-        .args(args)
-        .status()
-        .with_context(|| format!("failed to start `{}`", command))?;
+    let status = if server.log_enabled {
+        // Use `script` to log the session
+        let home = std::env::var("HOME").unwrap_or_default();
+        let log_dir = format!("{}/.local/share/lazyssh/logs", home);
+        let _ = std::fs::create_dir_all(&log_dir);
+        let now = chrono::Local::now();
+        let logfile = format!("{}/{}_{}.log", log_dir, server.name, now.format("%Y%m%d_%H%M%S"));
+        Command::new("script")
+            .args(["-q", "-f", &logfile, "-c", &format!("{} {}", command, args.join(" "))])
+            .status()
+            .with_context(|| "failed to start `script`")?
+    } else {
+        Command::new(&command)
+            .args(args)
+            .status()
+            .with_context(|| format!("failed to start `{}`", command))?
+    };
 
     reenter_tui()?;
 
@@ -208,51 +221,6 @@ async fn main() -> Result<()> {
                     sftp.finish_transfer();
                 }
             }
-        }
-
-        // Drain SSH PTY output from all tabs
-        let mut disconnected_tab: Option<usize> = None;
-        for (i, tab) in app.ssh_tabs.iter_mut().enumerate() {
-            if let Some(rx) = &mut tab.output_rx {
-                let mut disconnected = false;
-                loop {
-                    use tokio::sync::mpsc::error::TryRecvError;
-                    match rx.try_recv() {
-                        Ok(text) => {
-                            // Write to log if enabled
-                            if tab.log_enabled {
-                                if let Some(ref mut f) = tab.log_file {
-                                    use std::io::Write;
-                                    let _ = f.write_all(text.as_bytes());
-                                    let _ = f.flush();
-                                }
-                            }
-                            tab.state.feed_output(&text);
-                        }
-                        Err(TryRecvError::Disconnected) => {
-                            disconnected = true;
-                            break;
-                        }
-                        Err(TryRecvError::Empty) => break,
-                    }
-                }
-                if disconnected {
-                    tab.output_rx = None;
-                    tab.state.flush_output();
-                    tab.state.set_disconnected();
-                    disconnected_tab = Some(i);
-                }
-            }
-        }
-        if let Some(idx) = disconnected_tab {
-            app.ssh_tabs.remove(idx);
-            if app.ssh_tabs.is_empty() {
-                app.current_view = tui::app::CurrentView::ServerList;
-                app.active_ssh_tab = 0;
-            } else if app.active_ssh_tab >= app.ssh_tabs.len() {
-                app.active_ssh_tab = app.ssh_tabs.len() - 1;
-            }
-            app.notifications.info("Conexão SSH encerrada.");
         }
 
         terminal.draw(|f| {
@@ -476,23 +444,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 tui::app::CurrentView::SshTerminal => {
-                    if let Some(ssh) = &app.active_ssh_tab_ref() {
-                        let log_on = ssh.log_enabled;
-                        // Render tab bar if multiple tabs
-                        if app.ssh_tabs.len() > 1 {
-                            let tab_area = ratatui::layout::Layout::default()
-                                .direction(ratatui::layout::Direction::Vertical)
-                                .constraints([
-                                    ratatui::layout::Constraint::Length(1),
-                                    ratatui::layout::Constraint::Min(0),
-                                ])
-                                .split(f.area());
-                            render_tab_bar(f, &app.ssh_tabs, app.active_ssh_tab, tab_area[0]);
-                            render_ssh_terminal(f, &ssh.state, tab_area[1], log_on);
-                        } else {
-                            render_ssh_terminal(f, &ssh.state, f.area(), log_on);
-                        }
-                    }
+                    // SSH opens in external shell — this view is not used currently
                 }
             }
 
@@ -609,6 +561,12 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                     }
+                                    KeyCode::Char('l') if key.modifiers == KeyModifiers::CONTROL => {
+                                        app.toggle_server_log();
+                                    }
+                                    KeyCode::Char('h') if key.modifiers == KeyModifiers::CONTROL => {
+                                        app.toggle_server_history();
+                                    }
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
                                             let index = app.filtered_indices[app.selected];
@@ -723,6 +681,7 @@ async fn main() -> Result<()> {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
                                                         };
                                                         app.servers.push(server);
                                                         app.filter(&app.input.clone());
@@ -1434,70 +1393,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         tui::app::CurrentView::SshTerminal => {
-                            // Ctrl+Q or Esc to disconnect active tab
-                            if (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q'))
-                                || key.code == KeyCode::Esc
-                            {
-                                app.close_active_tab();
-                            // Ctrl+W: close active tab
-                            } else if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('w') {
-                                app.close_active_tab();
-                            // Ctrl+L: toggle session log
-                            } else if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('l') {
-                                app.toggle_ssh_log();
-                            // Tab: next tab
-                            } else if key.code == KeyCode::Tab && key.modifiers.is_empty() {
-                                app.next_tab();
-                            // Shift+Tab: prev tab
-                            } else if key.code == KeyCode::BackTab {
-                                app.prev_tab();
-                            } else {
-                                // Extract everything from active tab in one borrow, then drop
-                                let mut record_cmd = None;
-                                let mut send_writer = None;
-                                let mut is_connected = false;
-                                if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    is_connected = matches!(ssh.state.status, tui::ssh_terminal::SshStatus::Connected);
-                                    send_writer = ssh.state.shell_writer.clone();
-                                    if is_connected {
-                                        match key.code {
-                                            KeyCode::PageUp => ssh.state.scroll_page_up(10),
-                                            KeyCode::PageDown => ssh.state.scroll_page_down(10),
-                                            KeyCode::Enter => {
-                                                if !ssh.input_buffer.trim().is_empty() {
-                                                    record_cmd = Some((ssh.input_buffer.trim().to_string(), ssh.label.clone()));
-                                                }
-                                                ssh.input_buffer.clear();
-                                            }
-                                            KeyCode::Backspace => {
-                                                ssh.input_buffer.pop();
-                                            }
-                                            KeyCode::Char(c) => {
-                                                ssh.input_buffer.push(c);
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                // ssh borrow dropped here
-                                if let Some((cmd, label)) = record_cmd {
-                                    app.command_history.add(cmd, label);
-                                }
-                                // Send key to PTY
-                                if is_connected {
-                                    let bytes = key_event_to_bytes(&key);
-                                    if !bytes.is_empty() {
-                                        if let Some(writer) = send_writer {
-                                            tokio::spawn(async move {
-                                                use tokio::io::AsyncWriteExt;
-                                                let mut w = writer.lock().await;
-                                                let _ = w.write_all(&bytes).await;
-                                                let _ = w.flush().await;
-                                            });
-                                        }
-                                    }
-                                }
-                            }
+                            // SSH opens in external shell — no TUI key handling
                         }
                     }
                 }
@@ -1507,11 +1403,7 @@ async fn main() -> Result<()> {
                 Event::Mouse(mouse) => {
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
-                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                                if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    ssh.state.scroll_up(3);
-                                }
-                            } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                            if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
                                 if let Some(sftp) = &mut app.sftp_state {
                                     sftp.previous_item();
                                 }
@@ -1520,11 +1412,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         MouseEventKind::ScrollDown => {
-                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                                if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    ssh.state.scroll_down(3);
-                                }
-                            } else if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
+                            if matches!(app.current_view, tui::app::CurrentView::SftpBrowser) {
                                 if let Some(sftp) = &mut app.sftp_state {
                                     sftp.next_item();
                                 }
@@ -1533,23 +1421,6 @@ async fn main() -> Result<()> {
                             }
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
-                            // Iniciar seleção no terminal SSH
-                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                                if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    let content_row = mouse.row.saturating_sub(1) as usize;
-                                    let col = mouse.column.saturating_sub(1) as usize;
-                                    let padding = ssh.state.padding_top.get();
-                                    let first_line = ssh.state.first_visible_line.get();
-
-                                    if content_row >= padding {
-                                        let output_idx = first_line + (content_row - padding);
-                                        if output_idx < ssh.state.output.len() {
-                                            ssh.state.start_selection(output_idx, col);
-                                        }
-                                    }
-                                }
-                            }
-                            // Clique na lista de servidores
                             if matches!(app.current_view, tui::app::CurrentView::ServerList)
                                 && app.insert_state.is_none()
                                 && app.edit_state.is_none()
@@ -1559,39 +1430,6 @@ async fn main() -> Result<()> {
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
                                     }
-                                }
-                            }
-                        }
-                        MouseEventKind::Drag(MouseButton::Left) => {
-                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                                if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    let content_row = mouse.row.saturating_sub(1) as usize;
-                                    let col = mouse.column.saturating_sub(1) as usize;
-                                    let padding = ssh.state.padding_top.get();
-                                    let first_line = ssh.state.first_visible_line.get();
-
-                                    if content_row >= padding {
-                                        let output_idx = first_line + (content_row - padding);
-                                        if output_idx < ssh.state.output.len() {
-                                            ssh.state.update_selection(output_idx, col);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        MouseEventKind::Up(MouseButton::Left) => {
-                            if matches!(app.current_view, tui::app::CurrentView::SshTerminal) {
-                                let copied = if let Some(ssh) = app.active_ssh_tab_mut() {
-                                    ssh.state.end_selection();
-                                    let has_sel = ssh.state.selection.is_some();
-                                    let copied = has_sel && ssh.state.copy_selection_to_clipboard();
-                                    if has_sel { ssh.state.clear_selection(); }
-                                    copied
-                                } else {
-                                    false
-                                };
-                                if copied {
-                                    app.notifications.success("Texto copiado!");
                                 }
                             }
                         }
@@ -1737,6 +1575,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
@@ -1762,6 +1601,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1790,6 +1630,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1819,6 +1660,7 @@ mod tests {
             agent_forwarding: true,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (_, args) = native_shell_command(&server);
         assert!(args.contains(&"-A".to_string()), "should contain -A flag");
@@ -1843,6 +1685,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-A".to_string()), "should NOT contain -A");
@@ -1869,6 +1712,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: Some("user@bastion.example.com".to_string()),
             log_enabled: false,
+            history_enabled: false,
         };
         let (_, args) = native_shell_command(&server);
         assert!(args.contains(&"-J".to_string()), "should contain -J flag");
@@ -1894,6 +1738,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: None,
             log_enabled: false,
+            history_enabled: false,
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "should NOT contain -J");
@@ -1918,6 +1763,7 @@ mod tests {
             agent_forwarding: false,
             proxy_jump: Some("".to_string()),
             log_enabled: false,
+            history_enabled: false,
         };
         let (_, args) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "empty proxy_jump should be ignored");
