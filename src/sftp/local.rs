@@ -28,6 +28,7 @@ impl LocalFs {
                 name,
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
+                permissions: None,
             });
         }
 

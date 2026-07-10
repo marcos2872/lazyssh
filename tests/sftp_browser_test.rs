@@ -18,6 +18,7 @@ fn test_server() -> Server {
         pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     }
 }
 
@@ -30,6 +31,7 @@ fn test_transfer_progress_percentage_partial() {
         bytes_done: 50,
         bytes_total: 100,
         is_upload: true,
+        start_time: std::time::Instant::now(),
     };
     assert_eq!(p.percentage(), 50);
     assert!(!p.is_complete());
@@ -42,6 +44,7 @@ fn test_transfer_progress_percentage_zero_total() {
         bytes_done: 0,
         bytes_total: 0,
         is_upload: true,
+        start_time: std::time::Instant::now(),
     };
     assert_eq!(p.percentage(), 0);
     assert!(p.is_complete());
@@ -54,6 +57,7 @@ fn test_transfer_progress_complete() {
         bytes_done: 100,
         bytes_total: 100,
         is_upload: false,
+        start_time: std::time::Instant::now(),
     };
     assert_eq!(p.percentage(), 100);
     assert!(p.is_complete());
@@ -66,6 +70,7 @@ fn test_transfer_progress_is_upload() {
         bytes_done: 0,
         bytes_total: 10,
         is_upload: true,
+        start_time: std::time::Instant::now(),
     };
     assert!(up.is_upload);
     let down = TransferProgress {
@@ -73,6 +78,7 @@ fn test_transfer_progress_is_upload() {
         bytes_done: 0,
         bytes_total: 10,
         is_upload: false,
+        start_time: std::time::Instant::now(),
     };
     assert!(!down.is_upload);
 }
@@ -96,11 +102,13 @@ fn test_sftp_state_refresh_remote() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: true,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 100,
         },
     ];
@@ -116,11 +124,13 @@ fn test_sftp_state_next_item_local() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
     ];
@@ -138,11 +148,13 @@ fn test_sftp_state_next_item_remote() {
         lazyssh::sftp::FileInfo {
             name: "x".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "y".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
     ];
@@ -157,11 +169,13 @@ fn test_sftp_state_previous_item() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
     ];
@@ -184,6 +198,7 @@ fn test_sftp_state_enter_local_dir() {
     state.local_files = vec![lazyssh::sftp::FileInfo {
         name: "file.txt".into(),
         is_dir: false,
+        permissions: None,
         size: 4,
     }];
 
@@ -199,6 +214,7 @@ fn test_sftp_state_enter_remote_returns_path() {
     state.remote_files = vec![lazyssh::sftp::FileInfo {
         name: "subdir".into(),
         is_dir: true,
+        permissions: None,
         size: 0,
     }];
     state.remote_selected = 0;
@@ -264,11 +280,13 @@ fn test_sftp_state_toggle_select_current() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
     ];
@@ -287,16 +305,19 @@ fn test_sftp_state_select_all_local() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
         lazyssh::sftp::FileInfo {
             name: "c".into(),
             is_dir: false,
+        permissions: None,
             size: 0,
         },
     ];
@@ -311,6 +332,7 @@ fn test_sftp_state_select_all_remote() {
     state.remote_files = vec![lazyssh::sftp::FileInfo {
         name: "x".into(),
         is_dir: false,
+        permissions: None,
         size: 0,
     }];
     state.select_all_current();
@@ -332,11 +354,13 @@ fn test_sftp_state_get_selected_files() {
         lazyssh::sftp::FileInfo {
             name: "a".into(),
             is_dir: false,
+        permissions: None,
             size: 1,
         },
         lazyssh::sftp::FileInfo {
             name: "b".into(),
             is_dir: false,
+        permissions: None,
             size: 2,
         },
     ];

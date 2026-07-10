@@ -658,6 +658,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.feed_output("before\x1b[2Jafter");
         assert!(state.output.is_empty(), "[2J should clear output");
@@ -676,6 +677,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.feed_output("line1\rline2\r\x1b[2J\x1b[Hclean");
         assert!(state.output.is_empty(), "output should be cleared");
@@ -694,6 +696,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.feed_output("keep\r");
         assert!(!state.output.is_empty(), "\\r should push line to output");
@@ -713,6 +716,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.feed_output("\x1b[?2004hnormal\x1b[?2004l");
         assert_eq!(state.current_line, "normal", "non-clear CSI should be discarded silently");
@@ -730,6 +734,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         assert!(matches!(state.status, SshStatus::Connecting));
         assert_eq!(state.server_name, "test");
@@ -744,6 +749,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.set_connected("sid123".into());
         assert!(matches!(state.status, SshStatus::Connected));
@@ -758,6 +764,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.set_error("connection refused".into());
         assert!(matches!(state.status, SshStatus::Error(_)));
@@ -772,6 +779,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.set_disconnected();
         assert!(matches!(state.status, SshStatus::Disconnected));
@@ -785,6 +793,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.output = vec!["a".into(), "b".into(), "c".into()];
         state.scroll_up(2);
@@ -801,6 +810,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.output = vec!["a".into()];
         state.scroll_up(999);
@@ -815,6 +825,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.scroll_offset = 5;
         state.scroll_to_bottom();
@@ -829,6 +840,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.add_output("line1".into());
         assert_eq!(state.output, vec!["line1"]);
@@ -842,6 +854,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.current_line = "pending".into();
         assert!(state.output.is_empty());
@@ -858,6 +871,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.start_selection(0, 3);
         assert!(state.is_selecting);
@@ -880,6 +894,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.start_selection(0, 0);
         state.clear_selection();
@@ -895,6 +910,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.output = vec!["hello world".into()];
         state.start_selection(0, 0);
@@ -910,6 +926,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.output = vec!["line one".into(), "line two".into()];
         state.start_selection(0, 5);
@@ -926,6 +943,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         assert_eq!(state.get_selected_text(), None);
     }
@@ -938,6 +956,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         state.output = vec!["aaaa".into(), "bbbb".into(), "cccc".into()];
         state.start_selection(0, 0);
@@ -954,6 +973,7 @@ mod tests {
             tags: vec![], pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+                                                            bookmarks: vec![],
         });
         assert!(!state.is_selected(0, 0));
     }

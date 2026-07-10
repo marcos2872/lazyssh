@@ -353,6 +353,7 @@ mod tests {
             pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
         }
     }
 

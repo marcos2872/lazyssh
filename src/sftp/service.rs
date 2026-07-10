@@ -131,6 +131,7 @@ impl SftpServiceSession {
                     name: entry.file_name(),
                     is_dir: metadata.is_dir(),
                     size: metadata.len(),
+                    permissions: metadata.permissions,
                 }
             })
             .collect();
@@ -192,12 +193,44 @@ impl SftpServiceSession {
         Ok(())
     }
 
-    /// Upload a local file to remote path.
-    pub async fn upload(&self, local_path: &str, remote_path: &str) -> Result<()> {
+    /// Upload a local file to remote path with progress reporting.
+    pub async fn upload(&self, local_path: &str, remote_path: &str, progress_tx: Option<tokio::sync::mpsc::UnboundedSender<u64>>) -> Result<()> {
+        use russh_sftp::protocol::OpenFlags;
+        use tokio::io::AsyncWriteExt;
+
+        let sftp = self
+            .sftp
+            .as_ref()
+            .context("SFTP session not connected")?;
+
         let data = tokio::fs::read(local_path)
             .await
             .context("Failed to read local file")?;
-        self.write_file(remote_path, &data).await
+
+        let total = data.len() as u64;
+        let mut file = sftp
+            .open_with_flags(
+                remote_path,
+                OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+            )
+            .await
+            .context("Failed to open remote file")?;
+
+        // Write in chunks and report progress
+        let chunk_size = 64 * 1024;
+        let mut offset = 0;
+        while offset < data.len() {
+            let end = (offset + chunk_size).min(data.len());
+            file.write_all(&data[offset..end])
+                .await
+                .context("Failed to write file")?;
+            offset = end;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send(offset as u64);
+            }
+        }
+
+        Ok(())
     }
 
     /// Check if a file or directory exists.
@@ -282,6 +315,23 @@ impl SftpServiceSession {
         sftp.rename(old_path, new_path)
             .await
             .context("Failed to rename")?;
+
+        Ok(())
+    }
+
+    /// Set file permissions (chmod).
+    pub async fn set_permissions(&self, path: &str, mode: u32) -> Result<()> {
+        let sftp = self
+            .sftp
+            .as_ref()
+            .context("SFTP session not connected")?;
+
+        let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+        attrs.permissions = Some(mode);
+
+        sftp.set_metadata(path, attrs)
+            .await
+            .context("Failed to set permissions")?;
 
         Ok(())
     }
@@ -392,6 +442,7 @@ mod tests {
             pinned: false,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }
     }
 

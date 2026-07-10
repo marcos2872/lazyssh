@@ -329,6 +329,18 @@ pub enum CurrentView {
     SftpBrowser,
 }
 
+pub enum SftpOpResult {
+    ListDir(Vec<crate::sftp::FileInfo>),
+    Upload(String),
+    Download(String),
+    Mkdir,
+    Unlink(String),
+    Rmdir(String),
+    Rename(String),
+    SetPermissions,
+    Error(String),
+}
+
 pub struct App {
     pub servers: Vec<Server>,
     pub filtered_indices: Vec<usize>,
@@ -344,8 +356,10 @@ pub struct App {
     pub notifications: NotificationQueue,
     pub effects: AppEffects,
     pub ssh_service: SshService,
-    pub sftp_service: SftpService,
+    pub sftp_service: std::sync::Arc<std::sync::Mutex<SftpService>>,
     pub ssh_output_rx: Option<mpsc::UnboundedReceiver<String>>,
+    pub sftp_progress_rx: Option<mpsc::UnboundedReceiver<u64>>,
+    pub sftp_op_rx: Option<mpsc::UnboundedReceiver<SftpOpResult>>,
     pub help_visible: bool,
     pub confirm_state: Option<ConfirmState>,
     pub start_time: std::time::Instant,
@@ -376,12 +390,14 @@ impl App {
             notifications,
             effects: AppEffects::new(),
             ssh_service: SshService::new(),
-            sftp_service: SftpService::new(),
+            sftp_service: std::sync::Arc::new(std::sync::Mutex::new(SftpService::new())),
             ssh_output_rx: None,
+            sftp_progress_rx: None,
             help_visible: false,
             confirm_state: None,
             start_time: std::time::Instant::now(),
             sort_by: None,
+            sftp_op_rx: None,
         }
     }
 
@@ -493,10 +509,10 @@ impl App {
 
             // Connect using SftpService (async via block_in_place)
             let result = {
-                let sftp_service = &mut self.sftp_service;
+                let mut svc = self.sftp_service.lock().unwrap();
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
-                        .block_on(sftp_service.connect(&server))
+                        .block_on(svc.connect(&server))
                 })
             };
 
@@ -529,11 +545,27 @@ impl App {
         }
     }
 
+    /// Spawn an SFTP operation as a background task to avoid blocking the TUI.
+    fn spawn_sftp_op<F, Fut>(&mut self, op_name: &str, f: F)
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = SftpOpResult> + Send + 'static,
+    {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.sftp_op_rx = Some(rx);
+        tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current().block_on(async move {
+                let result = f().await;
+                let _ = tx.send(result);
+            });
+        });
+    }
+
     /// List a remote directory via SFTP service.
     pub fn sftp_list_remote_dir(&self, session_id: &str, path: &str) -> Result<Vec<FileInfo>, String> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let session = self.sftp_service
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
                     .get_session(session_id)
                     .ok_or_else(|| "SFTP session not found".to_string())?;
                 session.list_dir(path).await.map_err(|e| e.to_string())
@@ -545,7 +577,7 @@ impl App {
     pub fn sftp_enter_dir(&self, session_id: &str, path: &str) -> Result<Vec<FileInfo>, String> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let session = self.sftp_service
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
                     .get_session(session_id)
                     .ok_or_else(|| "SFTP session not found".to_string())?;
                 session.list_dir(path).await.map_err(|e| e.to_string())
@@ -555,12 +587,12 @@ impl App {
 
     /// Upload a file via SFTP service.
     pub fn sftp_upload_file(&self, session_id: &str, local: &str, remote: &str) -> Result<(), String> {
+        let svc = self.sftp_service.lock().unwrap();
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let session = self.sftp_service
-                    .get_session(session_id)
+                let session = svc.get_session(session_id)
                     .ok_or_else(|| "SFTP session not found".to_string())?;
-                session.upload(local, remote).await.map_err(|e| e.to_string())
+                session.upload(local, remote, None).await.map_err(|e| e.to_string())
             })
         })
     }
@@ -569,10 +601,70 @@ impl App {
     pub fn sftp_download_file(&self, session_id: &str, remote: &str, local: &str) -> Result<(), String> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let session = self.sftp_service
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
                     .get_session(session_id)
                     .ok_or_else(|| "SFTP session not found".to_string())?;
                 session.download(remote, local).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Create a directory via SFTP.
+    pub fn sftp_mkdir(&self, session_id: &str, path: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.mkdir(path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Remove a file via SFTP.
+    pub fn sftp_unlink(&self, session_id: &str, path: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.remove_file(path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Remove a directory via SFTP.
+    pub fn sftp_rmdir(&self, session_id: &str, path: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.remove_dir(path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Rename a file or directory via SFTP.
+    pub fn sftp_rename(&self, session_id: &str, old_path: &str, new_path: &str) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.rename(old_path, new_path).await.map_err(|e| e.to_string())
+            })
+        })
+    }
+
+    /// Set file permissions via SFTP.
+    pub fn sftp_set_permissions(&self, session_id: &str, path: &str, mode: u32) -> Result<(), String> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let svc = self.sftp_service.lock().unwrap(); let session = svc
+                    .get_session(session_id)
+                    .ok_or_else(|| "SFTP session not found".to_string())?;
+                session.set_permissions(path, mode).await.map_err(|e| e.to_string())
             })
         })
     }
@@ -581,10 +673,10 @@ impl App {
         // Disconnect SFTP session from service
         if let Some(sftp) = &self.sftp_state {
             if let Some(ref session_id) = sftp.session_id {
-                let sftp_service = &mut self.sftp_service;
+                let mut svc = self.sftp_service.lock().unwrap();
                 let _ = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
-                        .block_on(sftp_service.disconnect(session_id))
+                        .block_on(svc.disconnect(session_id))
                 });
             }
         }
@@ -703,6 +795,7 @@ mod tests {
                 pinned: false,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
             Server {
                 name: "server2".to_string(),
@@ -716,6 +809,7 @@ mod tests {
                 pinned: true,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
         ]
     }
@@ -791,6 +885,7 @@ mod tests {
             auth: Auth::Key { path: "~/.ssh/id_ed25519".into(), passphrase: Some("secret".into()) },
             tags: vec![], pinned: true,
             last_connected: None, connection_count: 0,
+            bookmarks: vec![],
         };
         let es = EditState::from_server(&server, 0);
         assert_eq!(es.name, "editme");
@@ -807,6 +902,7 @@ mod tests {
             auth: Auth::Password { vault_key: "vk".into() },
             tags: vec![], pinned: false,
             last_connected: None, connection_count: 0,
+            bookmarks: vec![],
         };
         let es = EditState::from_server(&server, 0);
         assert!(!es.is_key_auth());

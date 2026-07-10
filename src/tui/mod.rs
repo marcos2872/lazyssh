@@ -7,7 +7,7 @@ pub mod server_list;
 pub mod ssh_terminal;
 pub mod theme;
 
-pub use app::App;
+pub use app::{App, SftpOpResult};
 pub use effects::AppEffects;
 pub use help::{footer_hint_for_view, render_help_modal};
 pub use notifications::{render_notifications, NotificationQueue};

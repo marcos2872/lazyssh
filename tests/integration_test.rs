@@ -23,6 +23,7 @@ fn test_full_config_workflow() {
                 pinned: true,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
             Server {
                 name: "server2".to_string(),
@@ -36,6 +37,7 @@ fn test_full_config_workflow() {
                 pinned: false,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
         ],
         sort_by: None,

@@ -1,6 +1,8 @@
+use std::time::Instant;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
@@ -16,6 +18,7 @@ pub struct TransferProgress {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub is_upload: bool,
+    pub start_time: Instant,
 }
 
 impl TransferProgress {
@@ -30,6 +33,31 @@ impl TransferProgress {
     pub fn is_complete(&self) -> bool {
         self.bytes_done >= self.bytes_total
     }
+
+    pub fn eta_secs(&self) -> Option<u64> {
+        if self.bytes_done == 0 || self.bytes_total == 0 {
+            return None;
+        }
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed < 0.1 {
+            return None;
+        }
+        let rate = self.bytes_done as f64 / elapsed;
+        if rate <= 0.0 {
+            return None;
+        }
+        let remaining = (self.bytes_total - self.bytes_done) as f64 / rate;
+        Some(remaining as u64)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SftpInputMode {
+    None,
+    Mkdir,
+    Rename,
+    Chmod,
+    Bookmark,
 }
 
 #[derive(Debug)]
@@ -47,6 +75,8 @@ pub struct SftpState {
     pub transfer_progress: Option<TransferProgress>,
     pub is_transferring: bool,
     pub session_id: Option<String>,
+    pub input_mode: SftpInputMode,
+    pub input_buffer: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,6 +105,8 @@ impl SftpState {
             transfer_progress: None,
             is_transferring: false,
             session_id: None,
+            input_mode: SftpInputMode::None,
+            input_buffer: String::new(),
         }
     }
 
@@ -248,6 +280,7 @@ impl SftpState {
             bytes_done: 0,
             bytes_total: total_bytes,
             is_upload,
+            start_time: Instant::now(),
         });
     }
 
@@ -271,14 +304,27 @@ impl SftpState {
 pub fn render_sftp_browser(f: &mut Frame, state: &SftpState) {
     let area = f.area();
 
+    let has_input = state.input_mode != SftpInputMode::None;
+
     // Layout principal
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),      // Áreas dos painéis
-            Constraint::Length(3),   // Barra de status/ajuda
-        ])
-        .split(area);
+    let chunks = if has_input {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),      // Áreas dos painéis
+                Constraint::Length(1),   // Input line
+                Constraint::Length(3),   // Barra de status/ajuda
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),      // Áreas dos painéis
+                Constraint::Length(3),   // Barra de status/ajuda
+            ])
+            .split(area)
+    };
 
     // Layout horizontal para os painéis
     let panel_chunks = Layout::default()
@@ -288,7 +334,13 @@ pub fn render_sftp_browser(f: &mut Frame, state: &SftpState) {
 
     render_local_pane(f, state, panel_chunks[0]);
     render_remote_pane(f, state, panel_chunks[1]);
-    render_sftp_help(f, state, chunks[1]);
+
+    if has_input {
+        render_sftp_input(f, state, chunks[1]);
+        render_sftp_help(f, state, chunks[2]);
+    } else {
+        render_sftp_help(f, state, chunks[1]);
+    }
 }
 
 fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
@@ -309,7 +361,7 @@ fn render_local_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
             let (icon, style) = if file.is_dir {
                 ("/ ", Style::default().fg(Theme::primary()))
             } else if is_selected {
-                ("✓ ", Style::default().fg(Theme::success()).add_modifier(Modifier::BOLD))
+                ("↑ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
             } else {
                 ("  ", Style::default().fg(Theme::text()))
             };
@@ -372,7 +424,7 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
             let (icon, style) = if file.is_dir {
                 ("/ ", Style::default().fg(Theme::primary()))
             } else if is_selected {
-                ("✓ ", Style::default().fg(Theme::success()).add_modifier(Modifier::BOLD))
+                ("↓ ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
             } else {
                 ("  ", Style::default().fg(Theme::text()))
             };
@@ -426,14 +478,18 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
         let empty = bar_width - filled;
 
         let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
-        let direction = if progress.is_upload { "Upload" } else { "Download" };
+        let (direction, dir_color, bar_color) = if progress.is_upload {
+            ("↑ Upload", Color::Green, Theme::success())
+        } else {
+            ("↓ Download", Color::Blue, Theme::primary())
+        };
 
-        let progress_text = Line::from(vec![
+        let mut spans = vec![
             Span::styled(
                 format!(" {} {} ", direction, progress.file_name),
-                Style::default().fg(Theme::primary()),
+                Style::default().fg(dir_color).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(&bar, Style::default().fg(Theme::success())),
+            Span::styled(&bar, Style::default().fg(bar_color)),
             Span::styled(
                 format!(" {}%", pct),
                 Style::default().fg(Theme::text()).add_modifier(Modifier::BOLD),
@@ -442,7 +498,21 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
                 format!(" ({}/{})", format_size(progress.bytes_done), format_size(progress.bytes_total)),
                 Style::default().fg(Theme::text_dim()),
             ),
-        ]);
+        ];
+
+        if let Some(eta) = progress.eta_secs() {
+            let eta_str = if eta < 60 {
+                format!("{}s", eta)
+            } else {
+                format!("{}m{}s", eta / 60, eta % 60)
+            };
+            spans.push(Span::styled(
+                format!(" ETA:{}", eta_str),
+                Style::default().fg(Theme::text_dim()),
+            ));
+        }
+
+        let progress_text = Line::from(spans);
 
         let progress_bar = Paragraph::new(progress_text).block(
             Block::default()
@@ -468,27 +538,25 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
                 Style::default().fg(Theme::success()).add_modifier(Modifier::BOLD),
             ),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("Space: selecionar ", Style::default().fg(Theme::primary())),
+            Span::styled("Space ", Style::default().fg(Theme::primary())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
             Span::styled("a: todos ", Style::default().fg(Theme::primary())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("u: upload ", Style::default().fg(Theme::success())),
-            Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("d: download ", Style::default().fg(Theme::primary())),
-            Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("Esc: limpar", Style::default().fg(Theme::warning())),
+            Span::styled("u/d ", Style::default().fg(Theme::success())),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" Tab: trocar ", Style::default().fg(Theme::primary())),
+            Span::styled(" Tab ", Style::default().fg(Theme::primary())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("Enter: entrar ", Style::default().fg(Theme::success())),
+            Span::styled("Enter ", Style::default().fg(Theme::success())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("Space: sel. ", Style::default().fg(Theme::primary())),
+            Span::styled("M/x/R/m ", Style::default().fg(Theme::primary())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("u/d: transf. ", Style::default().fg(Theme::success())),
+            Span::styled("b/B: bookmark ", Style::default().fg(Theme::secondary())),
             Span::styled("| ", Style::default().fg(Theme::text_dim())),
-            Span::styled("q: sair", Style::default().fg(Theme::error())),
+            Span::styled("u/d ", Style::default().fg(Theme::success())),
+            Span::styled("| ", Style::default().fg(Theme::text_dim())),
+            Span::styled("q", Style::default().fg(Theme::error())),
         ])
     };
 
@@ -500,6 +568,41 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
             .border_style(Theme::border_style()),
     );
     f.render_widget(status, area);
+}
+
+fn render_sftp_input(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
+    let (title, placeholder) = match state.input_mode {
+        SftpInputMode::Mkdir => (" Criar pasta ", "Nome da pasta..."),
+        SftpInputMode::Rename => (" Renomear ", "Novo nome..."),
+        SftpInputMode::Chmod => (" Permissões ", "755"),
+        SftpInputMode::Bookmark => (" Salvar bookmark ", "Nome do bookmark..."),
+        SftpInputMode::None => return,
+    };
+
+    let display = if state.input_buffer.is_empty() {
+        Span::styled(placeholder, Style::default().fg(Theme::text_dim()))
+    } else {
+        Span::styled(&state.input_buffer, Style::default().fg(Theme::text()))
+    };
+
+    let input_line = Line::from(vec![
+        Span::styled("  ", Style::default()),
+        display,
+    ]);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(Theme::modal_title_style())
+        .border_style(Theme::modal_border_style());
+
+    let input = Paragraph::new(input_line).block(block);
+    f.render_widget(input, area);
+
+    // Position cursor
+    let cursor_x = area.x + 2 + state.input_buffer.len() as u16;
+    let cursor_y = area.y + 1;
+    f.set_cursor_position((cursor_x, cursor_y));
 }
 
 pub fn format_size(size: u64) -> String {

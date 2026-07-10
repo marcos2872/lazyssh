@@ -8,6 +8,12 @@ pub struct AppConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServerBookmark {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Server {
     pub name: String,
     pub host: String,
@@ -22,6 +28,8 @@ pub struct Server {
     pub last_connected: Option<String>,
     #[serde(default)]
     pub connection_count: u32,
+    #[serde(default)]
+    pub bookmarks: Vec<ServerBookmark>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

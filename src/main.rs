@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, SftpOpResult, Theme};
 
 struct CleanupGuard;
 
@@ -136,6 +136,69 @@ async fn main() -> Result<()> {
     let mut app = App::new(config.servers);
 
     loop {
+        // Drain SFTP upload progress
+        if let Some(rx) = &mut app.sftp_progress_rx {
+            loop {
+                use tokio::sync::mpsc::error::TryRecvError;
+                match rx.try_recv() {
+                    Ok(bytes) => {
+                        if let Some(sftp) = &mut app.sftp_state {
+                            sftp.update_transfer_progress(bytes);
+                        }
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        app.sftp_progress_rx = None;
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+        }
+
+        // Drain SFTP async operation results
+        if let Some(rx) = &mut app.sftp_op_rx {
+            let mut done = false;
+            loop {
+                use tokio::sync::mpsc::error::TryRecvError;
+                match rx.try_recv() {
+                    Ok(SftpOpResult::Upload(name)) => {
+                        app.notifications.success(&format!("Enviado: {}", name));
+                    }
+                    Ok(SftpOpResult::Error(msg)) => {
+                        if msg == "__done__" {
+                            done = true;
+                        } else {
+                            app.notifications.error(&msg);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(TryRecvError::Disconnected) => {
+                        done = true;
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+            if done {
+                app.sftp_op_rx = None;
+                // Refresh remote listing
+                let entry = (
+                    app.sftp_state.as_ref().and_then(|s| s.session_id.clone()),
+                    app.sftp_state.as_ref().map(|s| s.remote_path.clone()),
+                );
+                if let (Some(sid), Some(rp)) = entry {
+                    if let Ok(files) = app.sftp_list_remote_dir(&sid, &rp) {
+                        if let Some(sftp) = &mut app.sftp_state {
+                            sftp.refresh_remote(files);
+                        }
+                    }
+                }
+                if let Some(sftp) = &mut app.sftp_state {
+                    sftp.finish_transfer();
+                }
+            }
+        }
+
         // Drain SSH PTY output into terminal state (caractere por caractere)
         if let Some(rx) = &mut app.ssh_output_rx {
             let mut disconnected = false;
@@ -596,6 +659,7 @@ async fn main() -> Result<()> {
                                                             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+            bookmarks: vec![],
                                                         };
                                                         app.servers.push(server);
                                                         app.filter(&app.input.clone());
@@ -717,6 +781,117 @@ async fn main() -> Result<()> {
                             }
                         }
                         tui::app::CurrentView::SftpBrowser => {
+                            // Handle SFTP input modes (mkdir/rename)
+                            if let Some(sftp) = &app.sftp_state {
+                                if sftp.input_mode != tui::sftp_browser::SftpInputMode::None {
+                                    match key.code {
+                                        KeyCode::Esc => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                sftp.input_mode = tui::sftp_browser::SftpInputMode::None;
+                                                sftp.input_buffer.clear();
+                                            }
+                                        }
+                                        KeyCode::Enter => {
+                                            let input = app.sftp_state.as_ref().map(|s| s.input_buffer.clone());
+                                            let mode = app.sftp_state.as_ref().map(|s| s.input_mode.clone());
+                                            if let (Some(input), Some(mode)) = (input, mode) {
+                                                if !input.is_empty() {
+                                                    let entry = (
+                                                        app.sftp_state.as_ref().and_then(|s| s.session_id.clone()),
+                                                        app.sftp_state.as_ref().map(|s| s.remote_path.clone()),
+                                                    );
+                                                    if let (Some(sid), Some(path)) = entry {
+                                                        let result = match mode {
+                                                            tui::sftp_browser::SftpInputMode::Mkdir => {
+                                                                let full_path = format!("{}/{}", path, input);
+                                                                app.sftp_mkdir(&sid, &full_path)
+                                                            }
+                                                            tui::sftp_browser::SftpInputMode::Rename => {
+                                                                if let Some(old_name) = app.sftp_state.as_ref()
+                                                                    .and_then(|s| s.remote_files.get(s.remote_selected))
+                                                                    .map(|f| f.name.clone())
+                                                                {
+                                                                    let old_path = format!("{}/{}", path, old_name);
+                                                                    let new_path = format!("{}/{}", path, input);
+                                                                    app.sftp_rename(&sid, &old_path, &new_path)
+                                                                } else {
+                                                                    Err("No file selected".to_string())
+                                                                }
+                                                            }
+                                                            tui::sftp_browser::SftpInputMode::Chmod => {
+                                                                if let Some(name) = app.sftp_state.as_ref()
+                                                                    .and_then(|s| s.remote_files.get(s.remote_selected))
+                                                                    .map(|f| f.name.clone())
+                                                                {
+                                                                    let full_path = format!("{}/{}", path, name);
+                                                                    if let Ok(mode) = u32::from_str_radix(input.trim(), 8) {
+                                                                        app.sftp_set_permissions(&sid, &full_path, mode)
+                                                                    } else {
+                                                                        Err("Invalid octal permissions".to_string())
+                                                                    }
+                                                                } else {
+                                                                    Err("No file selected".to_string())
+                                                                }
+                                                            }
+                                                            tui::sftp_browser::SftpInputMode::Bookmark => {
+                                                                let bookmark = crate::config::models::ServerBookmark {
+                                                                    name: input.clone(),
+                                                                    path: path.clone(),
+                                                                };
+                                                                // Find the server and add bookmark
+                                                                let server_idx = app.filtered_indices.get(app.selected).copied();
+                                                                if let Some(idx) = server_idx {
+                                                                    if let Some(server) = app.servers.get_mut(idx) {
+                                                                        server.bookmarks.push(bookmark);
+                                                                        let _ = crate::config::save_config(
+                                                                            &crate::config::AppConfig { servers: app.servers.clone(), sort_by: app.sort_by.clone() },
+                                                                            &crate::config::get_config_path(),
+                                                                        );
+                                                                        Ok(())
+                                                                    } else {
+                                                                        Err("Server not found".to_string())
+                                                                    }
+                                                                } else {
+                                                                    Err("No server selected".to_string())
+                                                                }
+                                                            }
+                                                            _ => Ok(()),
+                                                        };
+                                                        match result {
+                                                            Ok(()) => {
+                                                                if let Some(sftp) = &mut app.sftp_state {
+                                                                    sftp.input_mode = tui::sftp_browser::SftpInputMode::None;
+                                                                    sftp.input_buffer.clear();
+                                                                }
+                                                                if let Ok(files) = app.sftp_list_remote_dir(&sid, &path) {
+                                                                    if let Some(sftp) = &mut app.sftp_state {
+                                                                        sftp.refresh_remote(files);
+                                                                    }
+                                                                }
+                                                                app.notifications.success("Operação concluída!");
+                                                            }
+                                                            Err(e) => app.notifications.error(&format!("Erro: {}", e)),
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Char(c) => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                sftp.input_buffer.push(c);
+                                            }
+                                        }
+                                        KeyCode::Backspace => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                sftp.input_buffer.pop();
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                    continue;
+                                }
+                            }
+
                             match key.code {
                                 KeyCode::Char('q') | KeyCode::Esc => {
                                     if let Some(sftp) = &mut app.sftp_state {
@@ -866,32 +1041,38 @@ async fn main() -> Result<()> {
 
                                     // Do upload outside sftp borrow
                                     if let Some((ref paths, Some(ref sid))) = upload_data {
-                                        for (name, local, remote) in paths {
-                                            match app.sftp_upload_file(sid, local, remote) {
-                                                Ok(_) => {
-                                                    app.notifications.success(&format!("Enviado: {}", name));
-                                                }
-                                                Err(e) => {
-                                                    app.notifications.error(&format!("Erro ao enviar {}: {}", name, e));
-                                                }
-                                            }
-                                        }
-                                        // Refresh remote listing
-                                        let rpath = app.sftp_state.as_ref()
-                                                                            .map(|s| s.remote_path.clone());
-                                        if let Some(rp) = rpath {
-                                            match app.sftp_list_remote_dir(sid, &rp) {
-                                                Ok(files) => {
-                                                    if let Some(sftp) = &mut app.sftp_state {
-                                                        sftp.refresh_remote(files);
+                                        // Spawn upload as background task so TUI stays responsive
+                                        let (result_tx, result_rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+                                        app.sftp_op_rx = Some(result_rx);
+                                        app.sftp_progress_rx = Some(progress_rx);
+                                        let sid = sid.clone();
+                                        let paths = paths.clone();
+                                        let sftp_service = app.sftp_service.clone();
+                                        tokio::spawn(async move {
+                                            for (name, local, remote) in &paths {
+                                                let svc = sftp_service.lock().unwrap();
+                                                let result = tokio::task::block_in_place(|| {
+                                                    tokio::runtime::Handle::current().block_on(async {
+                                                        if let Some(session) = svc.get_session(&sid) {
+                                                            session.upload(local, remote, Some(progress_tx.clone())).await
+                                                        } else {
+                                                            Err(anyhow::anyhow!("Session not found"))
+                                                        }
+                                                    })
+                                                });
+                                                drop(svc);
+                                                match result {
+                                                    Ok(()) => {
+                                                        let _ = result_tx.send(SftpOpResult::Upload(name.clone()));
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = result_tx.send(SftpOpResult::Error(format!("Erro ao enviar {}: {}", name, e)));
                                                     }
                                                 }
-                                                Err(e) => app.notifications.error(&e),
                                             }
-                                        }
-                                        if let Some(sftp) = &mut app.sftp_state {
-                                            sftp.finish_transfer();
-                                        }
+                                            let _ = result_tx.send(SftpOpResult::Error("__done__".to_string()));
+                                        });
                                     }
                                 }
                                 KeyCode::Char('d') => {
@@ -986,6 +1167,122 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     app.notifications.info("Atualizado!");
+                                }
+                                KeyCode::Char('M') => {
+                                    // Create directory
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else {
+                                            sftp.input_mode = tui::sftp_browser::SftpInputMode::Mkdir;
+                                            sftp.input_buffer.clear();
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('R') => {
+                                    // Rename file/directory
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
+                                            if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {
+                                                sftp.input_mode = tui::sftp_browser::SftpInputMode::Rename;
+                                                sftp.input_buffer = file.name.clone();
+                                            }
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('x') => {
+                                    // Remove file/directory
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
+                                            let sid = sftp.session_id.clone();
+                                            let path = sftp.remote_path.clone();
+                                            let name = sftp.remote_files.get(sftp.remote_selected).map(|f| f.name.clone());
+                                            let is_dir = sftp.remote_files.get(sftp.remote_selected).map(|f| f.is_dir);
+                                            if let (Some(sid), Some(name), Some(is_dir)) = (sid, name, is_dir) {
+                                                let full_path = format!("{}/{}", path, name);
+                                                let result = if is_dir {
+                                                    app.sftp_rmdir(&sid, &full_path)
+                                                } else {
+                                                    app.sftp_unlink(&sid, &full_path)
+                                                };
+                                                match result {
+                                                    Ok(()) => {
+                                                        app.notifications.success(&format!("Removido: {}", name));
+                                                        // Refresh
+                                                        if let Ok(files) = app.sftp_list_remote_dir(&sid, &path) {
+                                                            if let Some(sftp) = &mut app.sftp_state {
+                                                                sftp.refresh_remote(files);
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => app.notifications.error(&format!("Erro ao remover: {}", e)),
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('m') => {
+                                    // Chmod - change permissions
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.is_transferring {
+                                            app.notifications.warning("Transferência em andamento!");
+                                        } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
+                                            if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {
+                                                let perm_str = file.permissions
+                                                    .map(|p| format!("{:04o}", p & 0o7777))
+                                                    .unwrap_or_else(|| "????".to_string());
+                                                sftp.input_mode = tui::sftp_browser::SftpInputMode::Chmod;
+                                                sftp.input_buffer = perm_str;
+                                            }
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('b') => {
+                                    // Save current remote directory as bookmark
+                                    if let Some(sftp) = &mut app.sftp_state {
+                                        if sftp.focus_side == tui::sftp_browser::Side::Remote {
+                                            sftp.input_mode = tui::sftp_browser::SftpInputMode::Bookmark;
+                                            // Default name is the last component of the path
+                                            let default_name = sftp.remote_path
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or("root")
+                                                .to_string();
+                                            sftp.input_buffer = default_name;
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('B') => {
+                                    // Navigate to bookmark
+                                    if let Some(sftp) = &app.sftp_state {
+                                        if sftp.focus_side == tui::sftp_browser::Side::Remote {
+                                            let server_idx = app.filtered_indices.get(app.selected).copied();
+                                            if let Some(idx) = server_idx {
+                                                if let Some(server) = app.servers.get(idx) {
+                                                    if server.bookmarks.is_empty() {
+                                                        app.notifications.info("Nenhum bookmark salvo. Use 'b' para salvar.");
+                                                    } else {
+                                                        // For now, show first bookmark (future: selection modal)
+                                                        let first = &server.bookmarks[0];
+                                                        let path = first.path.clone();
+                                                        app.notifications.info(&format!("Navegando para: {}", first.name));
+                                                        if let Some(sid) = sftp.session_id.clone() {
+                                                            if let Ok(files) = app.sftp_list_remote_dir(&sid, &path) {
+                                                                if let Some(sftp) = &mut app.sftp_state {
+                                                                    sftp.remote_path = path;
+                                                                    sftp.refresh_remote(files);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
@@ -1255,6 +1552,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+            bookmarks: vec![],
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
@@ -1276,6 +1574,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+            bookmarks: vec![],
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
@@ -1300,6 +1599,7 @@ mod tests {
             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
+            bookmarks: vec![],
         };
         let (cmd, args) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");

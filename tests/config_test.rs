@@ -38,6 +38,7 @@ fn test_server_creation() {
         pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     };
     assert_eq!(server.name, "myserver");
     assert_eq!(server.port, 22);
@@ -76,6 +77,7 @@ fn test_config_serialization_round_trip() {
             pinned: true,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }],
         sort_by: None,
     };
@@ -100,6 +102,7 @@ fn test_config_password_serialization_round_trip() {
             pinned: false,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }],
         sort_by: None,
     };
@@ -135,6 +138,7 @@ fn test_save_and_load_config() {
             pinned: false,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }],
         sort_by: None,
     };
@@ -189,6 +193,7 @@ fn test_config_with_multiple_servers() {
                 pinned: false,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
             Server {
                 name: "beta".to_string(),
@@ -200,6 +205,7 @@ fn test_config_with_multiple_servers() {
                 pinned: true,
                 last_connected: None,
                 connection_count: 0,
+            bookmarks: vec![],
             },
         ],
         sort_by: None,
@@ -261,6 +267,7 @@ fn test_save_config_creates_backup() {
             pinned: false,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }],
         sort_by: None,
     };
@@ -278,6 +285,7 @@ fn test_save_config_creates_backup() {
             pinned: false,
             last_connected: None,
             connection_count: 0,
+            bookmarks: vec![],
         }],
         sort_by: None,
     };
@@ -312,6 +320,7 @@ fn test_add_server_creates_entry() {
         pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -343,6 +352,7 @@ fn test_remove_server_deletes_entry() {
         pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     };
     lazyssh::config::file::add_server(server).unwrap();
     lazyssh::config::file::remove_server("to-remove").unwrap();
@@ -374,6 +384,7 @@ fn test_update_server_modifies_entry() {
         pinned: false,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     };
     lazyssh::config::file::add_server(server).unwrap();
 
@@ -387,6 +398,7 @@ fn test_update_server_modifies_entry() {
         pinned: true,
         last_connected: None,
         connection_count: 0,
+            bookmarks: vec![],
     };
     lazyssh::config::file::update_server("to-update", updated).unwrap();
 
