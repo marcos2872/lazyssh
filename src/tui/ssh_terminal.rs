@@ -457,7 +457,7 @@ pub fn render_tab_bar(f: &mut Frame, tabs: &[crate::tui::app::SshTab], active: u
     f.render_widget(tab_bar, area);
 }
 
-pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState, area: ratatui::layout::Rect) {
+pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState, area: ratatui::layout::Rect, log_enabled: bool) {
 
     // Status bar no topo
     let status_color = match &state.status {
@@ -469,6 +469,7 @@ pub fn render_ssh_terminal(f: &mut Frame, state: &SshTerminalState, area: ratatu
 
     let status_text = match &state.status {
         SshStatus::Connecting => "⏳ Conectando...",
+        SshStatus::Connected if log_enabled => "✓ Conectado [L]",
         SshStatus::Connected => "✓ Conectado",
         SshStatus::Error(e) => e.as_str(),
         SshStatus::Disconnected => "○ Desconectado",

@@ -477,6 +477,7 @@ async fn main() -> Result<()> {
                 }
                 tui::app::CurrentView::SshTerminal => {
                     if let Some(ssh) = &app.active_ssh_tab_ref() {
+                        let log_on = ssh.log_enabled;
                         // Render tab bar if multiple tabs
                         if app.ssh_tabs.len() > 1 {
                             let tab_area = ratatui::layout::Layout::default()
@@ -487,9 +488,9 @@ async fn main() -> Result<()> {
                                 ])
                                 .split(f.area());
                             render_tab_bar(f, &app.ssh_tabs, app.active_ssh_tab, tab_area[0]);
-                            render_ssh_terminal(f, &ssh.state, tab_area[1]);
+                            render_ssh_terminal(f, &ssh.state, tab_area[1], log_on);
                         } else {
-                            render_ssh_terminal(f, &ssh.state, f.area());
+                            render_ssh_terminal(f, &ssh.state, f.area(), log_on);
                         }
                     }
                 }
@@ -656,20 +657,7 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     KeyCode::Enter => {
-                                        if let Some(server) = app.selected_server().cloned() {
-                                            match run_native_shell_handoff(&server) {
-                                                Ok(status) => {
-                                                    let message = if status.success() {
-                                                        "Conexão SSH encerrada."
-                                                    } else {
-                                                        "SSH saiu sem término bem-sucedido."
-                                                    };
-                                                    app.notifications.info(message);
-                                                    let _ = terminal.clear();
-                                                }
-                                                Err(e) => app.notifications.error(&format!("Falha ao abrir SSH: {}", e)),
-                                            }
-                                        }
+                                        app.connect_ssh();
                                     }
                                     _ => {}
                                 },
@@ -1433,9 +1421,10 @@ async fn main() -> Result<()> {
                             }
                         }
                         tui::app::CurrentView::SshTerminal => {
-                            // Ctrl+Q or Esc to disconnect active tab
+                            // Ctrl+Q, Esc, or q to disconnect active tab
                             if (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q'))
                                 || key.code == KeyCode::Esc
+                                || key.code == KeyCode::Char('q')
                             {
                                 app.close_active_tab();
                             // Ctrl+W: close active tab

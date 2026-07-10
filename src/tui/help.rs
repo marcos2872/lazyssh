@@ -48,12 +48,11 @@ pub fn help_entries_for_view(view: &CurrentView) -> Vec<HelpEntry> {
         ],
         CurrentView::SshTerminal => vec![
             HelpEntry::new("Qualquer tecla", "Enviar ao terminal remoto"),
-            HelpEntry::new("Ctrl+Q ou Esc", "Desconectar"),
+            HelpEntry::new("q / Ctrl+Q / Esc", "Fechar aba / Voltar"),
+            HelpEntry::new("Tab / Shift+Tab", "Próxima / aba anterior"),
             HelpEntry::new("PageUp/PageDown", "Rolar 10 linhas"),
             HelpEntry::new("Mouse scroll", "Rolar 3 linhas"),
-            HelpEntry::new("Ctrl+R", "Buscar no histórico"),
             HelpEntry::new("L", "Toggle log de sessão"),
-            HelpEntry::new("x", "Comandos customizados"),
             HelpEntry::new("?", "Esta ajuda"),
         ],
         CurrentView::SftpBrowser => vec![
@@ -81,7 +80,7 @@ pub fn help_entries_for_view(view: &CurrentView) -> Vec<HelpEntry> {
 pub fn footer_hint_for_view(view: &CurrentView) -> String {
     match view {
         CurrentView::ServerList => "j/k:Navegar  Enter:Conectar  a:Novo  ?:Ajuda".to_string(),
-        CurrentView::SshTerminal => "Ctrl+Q:Sair  Ctrl+R:Histórico  ?:Ajuda".to_string(),
+        CurrentView::SshTerminal => "q:Voltar  Tab:Abas  L:Log  ?:Ajuda".to_string(),
         CurrentView::SftpBrowser => "Tab:Alternar  u:Upload  d:Download  ?:Ajuda".to_string(),
     }
 }
