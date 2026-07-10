@@ -1089,32 +1089,35 @@ async fn main() -> Result<()> {
                                                         .map_err(|e| format!("rsync erro: {}", e));
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // Read stderr line by line for REAL progress
-                                                            use std::io::BufRead;
+                                                            // Spawn thread to read stderr and send progress
+                                                            // This keeps the upload thread free to wait on process
                                                             let stderr = proc.stderr.take().unwrap();
-                                                            let mut reader = std::io::BufReader::new(stderr);
-                                                            let mut line_buf = String::new();
-                                                            loop {
-                                                                line_buf.clear();
-                                                                match reader.read_line(&mut line_buf) {
-                                                                    Ok(0) => break, // EOF
-                                                                    Ok(_) => {
-                                                                        // rsync -avP: "  1,234 100%  12.3MB/s  00:00"
-                                                                        if line_buf.contains('%') {
-                                                                            for word in line_buf.split_whitespace() {
-                                                                                if let Some(pct) = word.strip_suffix('%') {
-                                                                                    if let Ok(pct_val) = pct.replace(',', "").parse::<u64>() {
-                                                                                        if pct_val <= 100 {
-                                                                                            let _ = progress_tx2.send(pct_val);
+                                                            let ptx = progress_tx2.clone();
+                                                            std::thread::spawn(move || {
+                                                                use std::io::BufRead;
+                                                                let mut reader = std::io::BufReader::new(stderr);
+                                                                let mut line_buf = String::new();
+                                                                loop {
+                                                                    line_buf.clear();
+                                                                    match reader.read_line(&mut line_buf) {
+                                                                        Ok(0) => break,
+                                                                        Ok(_) => {
+                                                                            if line_buf.contains('%') {
+                                                                                for word in line_buf.split_whitespace() {
+                                                                                    if let Some(pct) = word.strip_suffix('%') {
+                                                                                        if let Ok(pct_val) = pct.replace(',', "").parse::<u64>() {
+                                                                                            if pct_val <= 100 {
+                                                                                                let _ = ptx.send(pct_val);
+                                                                                            }
                                                                                         }
                                                                                     }
                                                                                 }
                                                                             }
                                                                         }
+                                                                        Err(_) => break,
                                                                     }
-                                                                    Err(_) => break,
                                                                 }
-                                                            }
+                                                            });
                                                             let _ = proc.wait();
                                                             let _ = progress_tx2.send(100);
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
