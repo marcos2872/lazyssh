@@ -1089,28 +1089,41 @@ async fn main() -> Result<()> {
                                                         .map_err(|e| format!("rsync erro: {}", e));
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // rsync shows real progress on stderr
-                                                            // Read stderr and parse progress lines
-                                                            use std::io::BufRead;
+                                                            // CRITICAL: drain stderr so process doesn't block
                                                             let stderr = proc.stderr.take().unwrap();
-                                                            let reader = std::io::BufReader::new(stderr);
-                                                            for line in reader.lines() {
-                                                                if let Ok(line) = line {
-                                                                    // rsync output: "  45%  1.2GB  12.3MB/s  00:30"
-                                                                    // Also: "1,234,567 100%  12.3MB/s  00:00"
-                                                                    for word in line.split_whitespace() {
-                                                                        if let Some(pct) = word.strip_suffix('%') {
-                                                                            if let Ok(pct_val) = pct.replace(',', "").parse::<u64>() {
-                                                                                if pct_val <= 100 {
-                                                                                    let _ = progress_tx2.send(pct_val);
-                                                                                }
-                                                                            }
-                                                                        }
+                                                            std::thread::spawn(move || {
+                                                                use std::io::Read;
+                                                                let mut buf = [0u8; 4096];
+                                                                let mut reader = stderr;
+                                                                loop {
+                                                                    match reader.read(&mut buf) {
+                                                                        Ok(0) => break,
+                                                                        Ok(_) => {}
+                                                                        Err(_) => break,
                                                                     }
                                                                 }
+                                                            });
+
+                                                            // Progress based on time, capped at 99% until done
+                                                            let total_size: u64 = std::fs::metadata(local)
+                                                                .map(|m| m.len())
+                                                                .unwrap_or(0);
+                                                            let start = std::time::Instant::now();
+                                                            loop {
+                                                                match proc.try_wait() {
+                                                                    Ok(Some(_)) => break,
+                                                                    Ok(None) => {
+                                                                        std::thread::sleep(std::time::Duration::from_millis(500));
+                                                                        let elapsed = start.elapsed().as_secs_f64();
+                                                                        let estimated = (elapsed * 10.0 * 1024.0 * 1024.0) as u64;
+                                                                        // Cap at 99% until process finishes
+                                                                        let progress = estimated.min(total_size * 99 / 100);
+                                                                        let _ = progress_tx2.send(progress);
+                                                                    }
+                                                                    Err(_) => break,
+                                                                }
                                                             }
-                                                            let _ = proc.wait();
-                                                            let _ = progress_tx2.send(100);
+                                                            let _ = progress_tx2.send(total_size); // 100% only when done
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
                                                         }
                                                         Err(e) => {
