@@ -545,22 +545,6 @@ impl App {
         }
     }
 
-    /// Spawn an SFTP operation as a background task to avoid blocking the TUI.
-    fn spawn_sftp_op<F, Fut>(&mut self, op_name: &str, f: F)
-    where
-        F: FnOnce() -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = SftpOpResult> + Send + 'static,
-    {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.sftp_op_rx = Some(rx);
-        tokio::task::spawn_blocking(move || {
-            tokio::runtime::Handle::current().block_on(async move {
-                let result = f().await;
-                let _ = tx.send(result);
-            });
-        });
-    }
-
     /// List a remote directory via SFTP service.
     pub fn sftp_list_remote_dir(&self, session_id: &str, path: &str) -> Result<Vec<FileInfo>, String> {
         tokio::task::block_in_place(|| {

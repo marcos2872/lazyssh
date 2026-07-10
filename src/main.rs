@@ -1198,7 +1198,7 @@ async fn main() -> Result<()> {
                                                             use std::io::Read;
                                                             use std::io::Write;
                                                             let mut stdout = proc.stdout.take().unwrap();
-                                                            let mut local_file = std::fs::File::create(local)
+                                                            let local_file = std::fs::File::create(local)
                                                                 .map_err(|e| format!("Erro ao criar {}: {}", local, e));
                                                             match local_file {
                                                                 Ok(mut f) => {

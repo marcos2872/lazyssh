@@ -68,7 +68,7 @@ pub async fn upload_file(session: &SftpSession, local_path: &str, remote_path: &
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     // Get file size without reading entire file
-    let file_size = tokio::fs::metadata(local_path)
+    let _file_size = tokio::fs::metadata(local_path)
         .await
         .context("Failed to read local file metadata")?
         .len();
@@ -263,7 +263,7 @@ impl SftpServiceSession {
             .await
             .context("Failed to read local file")?;
 
-        let total = data.len() as u64;
+        let _total = data.len() as u64;
         let mut file = sftp
             .open_with_flags(
                 remote_path,
