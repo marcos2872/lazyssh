@@ -1046,7 +1046,9 @@ async fn main() -> Result<()> {
                                             let server_clone = server.clone();
                                             let paths_clone = paths.clone();
                                             let (result_tx2, result_rx2) = tokio::sync::mpsc::unbounded_channel();
+                                            let (progress_tx2, progress_rx2) = tokio::sync::mpsc::unbounded_channel::<u64>();
                                             app.sftp_op_rx = Some(result_rx2);
+                                            app.sftp_progress_rx = Some(progress_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
                                                     // Build SCP command manually
@@ -1073,17 +1075,30 @@ async fn main() -> Result<()> {
                                                     args.push(local.to_string());
                                                     args.push(format!("{}@{}:{}", server_clone.user, server_clone.host, remote));
                                                     let cmd = if args[0] == "sshpass" { "sshpass" } else { "scp" };
-                                                    let status = std::process::Command::new(cmd)
+                                                    let mut child = std::process::Command::new(cmd)
                                                         .args(&args[if cmd == "sshpass" { 1.. } else { 0.. }])
                                                         .stdout(std::process::Stdio::piped())
                                                         .stderr(std::process::Stdio::piped())
-                                                        .status();
-                                                    match status {
-                                                        Ok(s) if s.success() => {
+                                                        .spawn()
+                                                        .map_err(|e| format!("SCP erro: {}", e));
+                                                    match child {
+                                                        Ok(mut proc) => {
+                                                            // Read stderr for progress
+                                                            use std::io::BufRead;
+                                                            let stderr = proc.stderr.take().unwrap();
+                                                            let reader = std::io::BufReader::new(stderr);
+                                                            for line in reader.lines() {
+                                                                if let Ok(line) = line {
+                                                                    // SCP stderr: "filename  100%  1.2GB  00:30"
+                                                                    if let Some(pct_str) = line.split_whitespace().nth(1) {
+                                                                        if let Ok(pct) = pct_str.trim_end_matches('%').parse::<u64>() {
+                                                                            let _ = progress_tx2.send(pct);
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            let _ = proc.wait();
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
-                                                        }
-                                                        Ok(s) => {
-                                                            let _ = result_tx2.send(SftpOpResult::Error(format!("SCP falhou: código {}", s.code().unwrap_or(-1))));
                                                         }
                                                         Err(e) => {
                                                             let _ = result_tx2.send(SftpOpResult::Error(format!("SCP erro: {}", e)));
