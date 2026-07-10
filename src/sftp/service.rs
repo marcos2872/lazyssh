@@ -41,7 +41,7 @@ pub struct SftpServiceSession {
     pub id: String,
     pub server: Server,
     pub status: SessionStatus,
-    sftp: Option<SftpSession>,
+    sftp: Option<Arc<SftpSession>>,
 }
 
 impl SftpServiceSession {
@@ -55,10 +55,66 @@ impl SftpServiceSession {
         }
     }
 
+    /// Get a clone of the underlying SftpSession (Arc-wrapped, cheap to clone).
+    pub fn sftp_session(&self) -> Option<Arc<SftpSession>> {
+        self.sftp.clone()
+    }
+}
+
+/// Upload a file using an Arc<SftpSession> directly (no mutex lock needed).
+/// Reads and writes in chunks to avoid memory and buffer issues with large files.
+pub async fn upload_file(session: &SftpSession, local_path: &str, remote_path: &str, progress_tx: Option<tokio::sync::mpsc::UnboundedSender<u64>>) -> Result<()> {
+    use russh_sftp::protocol::OpenFlags;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // Get file size without reading entire file
+    let file_size = tokio::fs::metadata(local_path)
+        .await
+        .context("Failed to read local file metadata")?
+        .len();
+
+    let mut file = session
+        .open_with_flags(
+            remote_path,
+            OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+        )
+        .await
+        .context("Failed to open remote file")?;
+
+    // Open local file and read in chunks
+    let mut local_file = tokio::fs::File::open(local_path)
+        .await
+        .context("Failed to open local file")?;
+
+    let chunk_size = 32 * 1024; // 32KB chunks to stay within SFTP packet limits
+    let mut buf = vec![0u8; chunk_size];
+    let mut total_written = 0u64;
+
+    loop {
+        let n = local_file.read(&mut buf).await.context("Failed to read local file")?;
+        if n == 0 {
+            break; // EOF
+        }
+        file.write_all(&buf[..n])
+            .await
+            .context("Failed to write file")?;
+        file.flush().await.context("Failed to flush file")?;
+        total_written += n as u64;
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(total_written);
+        }
+    }
+
+    Ok(())
+}
+
+impl SftpServiceSession {
     /// Connect to the remote server and initialize SFTP.
     pub async fn connect(&mut self) -> Result<()> {
+        // Large timeout for SFTP operations (uploads/downloads can take a long time)
+        // TCP keepalive handles actual disconnections; this is just a safety net
         let config = client::Config {
-            inactivity_timeout: Some(std::time::Duration::from_secs(30)),
+            inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             ..Default::default()
         };
         let config = Arc::new(config);
@@ -107,7 +163,7 @@ impl SftpServiceSession {
             .await
             .context("Failed to initialize SFTP session")?;
 
-        self.sftp = Some(sftp);
+        self.sftp = Some(Arc::new(sftp));
         self.status = SessionStatus::Connected;
         Ok(())
     }

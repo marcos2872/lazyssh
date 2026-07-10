@@ -10,4 +10,4 @@ pub struct FileInfo {
 }
 
 pub use local::LocalFs;
-pub use service::{SftpService, SftpServiceSession, SessionStatus};
+pub use service::{SftpService, SftpServiceSession, SessionStatus, upload_file};

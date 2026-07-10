@@ -1049,30 +1049,30 @@ async fn main() -> Result<()> {
                                         let sid = sid.clone();
                                         let paths = paths.clone();
                                         let sftp_service = app.sftp_service.clone();
-                                        tokio::spawn(async move {
-                                            for (name, local, remote) in &paths {
-                                                let svc = sftp_service.lock().unwrap();
-                                                let result = tokio::task::block_in_place(|| {
-                                                    tokio::runtime::Handle::current().block_on(async {
-                                                        if let Some(session) = svc.get_session(&sid) {
-                                                            session.upload(local, remote, Some(progress_tx.clone())).await
-                                                        } else {
-                                                            Err(anyhow::anyhow!("Session not found"))
+                                        // Get SftpSession Arc clone (lock dropped immediately)
+                                        let sftp_session = {
+                                            let svc = sftp_service.lock().unwrap();
+                                            svc.get_session(&sid)
+                                                .and_then(|s| s.sftp_session())
+                                        };
+                                        if let Some(session) = sftp_session {
+                                            tokio::task::spawn_blocking(move || {
+                                                tokio::runtime::Handle::current().block_on(async move {
+                                                    for (name, local, remote) in &paths {
+                                                        let result = sftp::upload_file(&session, &local, &remote, Some(progress_tx.clone())).await;
+                                                        match result {
+                                                            Ok(()) => {
+                                                                let _ = result_tx.send(SftpOpResult::Upload(name.clone()));
+                                                            }
+                                                            Err(e) => {
+                                                                let _ = result_tx.send(SftpOpResult::Error(format!("Erro ao enviar {}: {}", name, e)));
+                                                            }
                                                         }
-                                                    })
+                                                    }
+                                                    let _ = result_tx.send(SftpOpResult::Error("__done__".to_string()));
                                                 });
-                                                drop(svc);
-                                                match result {
-                                                    Ok(()) => {
-                                                        let _ = result_tx.send(SftpOpResult::Upload(name.clone()));
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = result_tx.send(SftpOpResult::Error(format!("Erro ao enviar {}: {}", name, e)));
-                                                    }
-                                                }
-                                            }
-                                            let _ = result_tx.send(SftpOpResult::Error("__done__".to_string()));
-                                        });
+                                            });
+                                        }
                                     }
                                 }
                                 KeyCode::Char('d') => {
