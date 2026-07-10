@@ -1051,67 +1051,70 @@ async fn main() -> Result<()> {
                                             app.sftp_progress_rx = Some(progress_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
-                                                    // Build rsync command with real progress
-                                                    let mut ssh_opts = String::new();
+                                                    // Use: cat local | ssh user@host 'cat > remote'
+                                                    // Real byte-level progress, no 1GB SFTP limit
+                                                    let mut ssh_args = vec![];
                                                     if server_clone.port != 22 {
-                                                        ssh_opts.push_str(&format!("-p {} ", server_clone.port));
+                                                        ssh_args.push("-p".to_string());
+                                                        ssh_args.push(server_clone.port.to_string());
                                                     }
                                                     match &server_clone.auth {
                                                         crate::config::models::Auth::Key { path, .. } => {
                                                             let expanded = shellexpand::tilde(path).into_owned();
-                                                            ssh_opts.push_str(&format!("-i {} ", expanded));
+                                                            ssh_args.push("-i".to_string());
+                                                            ssh_args.push(expanded);
                                                         }
                                                         crate::config::models::Auth::Password { .. } => {}
                                                     }
-                                                    let mut args = vec![
-                                                        "-avP".to_string(),
-                                                    ];
-                                                    if !ssh_opts.is_empty() {
-                                                        args.push("-e".to_string());
-                                                        args.push(format!("ssh {}", ssh_opts.trim()));
-                                                    }
-                                                    args.push(local.to_string());
-                                                    args.push(format!("{}@{}:{}", server_clone.user, server_clone.host, remote));
-                                                    // For password auth, use sshpass with rsync
+                                                    ssh_args.push(format!("{}@{}", server_clone.user, server_clone.host));
+                                                    ssh_args.push(format!("cat > {}", remote));
                                                     let (cmd, final_args) = match &server_clone.auth {
                                                         crate::config::models::Auth::Password { vault_key } if !vault_key.is_empty() => {
-                                                            let mut a = vec!["-p".to_string(), vault_key.clone(), "rsync".to_string()];
-                                                            a.extend(args);
+                                                            let mut a = vec!["-p".to_string(), vault_key.clone(), "ssh".to_string()];
+                                                            a.extend(ssh_args);
                                                             ("sshpass".to_string(), a)
                                                         }
-                                                        _ => ("rsync".to_string(), args),
+                                                        _ => ("ssh".to_string(), ssh_args),
                                                     };
-                                                    let mut child = std::process::Command::new(&cmd)
-                                                        .args(&final_args)
-                                                        .stdout(std::process::Stdio::piped())
-                                                        .stderr(std::process::Stdio::piped())
-                                                        .spawn()
-                                                        .map_err(|e| format!("rsync erro: {}", e));
+                                                    let local_file = std::fs::File::open(local)
+                                                        .map_err(|e| format!("Erro ao ler {}: {}", local, e));
+                                                    let mut child = match local_file {
+                                                        Ok(f) => std::process::Command::new(&cmd)
+                                                            .args(&final_args)
+                                                            .stdin(f)
+                                                            .stdout(std::process::Stdio::piped())
+                                                            .stderr(std::process::Stdio::piped())
+                                                            .spawn()
+                                                            .map_err(|e| format!("ssh erro: {}", e)),
+                                                        Err(e) => Err(e),
+                                                    };
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // Spawn thread to read stderr and send progress
-                                                            // This keeps the upload thread free to wait on process
-                                                            let stderr = proc.stderr.take().unwrap();
+                                                            // Read stdout to get byte count for real progress
+                                                            let stdout = proc.stdout.take().unwrap();
                                                             let ptx = progress_tx2.clone();
+                                                            let total = std::fs::metadata(local).map(|m| m.len()).unwrap_or(0);
+                                                            let start = std::time::Instant::now();
                                                             std::thread::spawn(move || {
-                                                                use std::io::BufRead;
-                                                                let mut reader = std::io::BufReader::new(stderr);
-                                                                let mut line_buf = String::new();
+                                                                use std::io::Read;
+                                                                let mut buf = [0u8; 65536];
+                                                                let mut reader = stdout;
+                                                                let mut bytes_read: u64 = 0;
+                                                                let mut last_update = std::time::Instant::now();
                                                                 loop {
-                                                                    line_buf.clear();
-                                                                    match reader.read_line(&mut line_buf) {
+                                                                    match reader.read(&mut buf) {
                                                                         Ok(0) => break,
-                                                                        Ok(_) => {
-                                                                            if line_buf.contains('%') {
-                                                                                for word in line_buf.split_whitespace() {
-                                                                                    if let Some(pct) = word.strip_suffix('%') {
-                                                                                        if let Ok(pct_val) = pct.replace(',', "").parse::<u64>() {
-                                                                                            if pct_val <= 100 {
-                                                                                                let _ = ptx.send(pct_val);
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                                }
+                                                                        Ok(n) => {
+                                                                            bytes_read += n as u64;
+                                                                            // Update progress every 200ms
+                                                                            if last_update.elapsed().as_millis() >= 200 {
+                                                                                let pct = if total > 0 {
+                                                                                    (bytes_read * 100 / total).min(99)
+                                                                                } else {
+                                                                                    0
+                                                                                };
+                                                                                let _ = ptx.send(pct);
+                                                                                last_update = std::time::Instant::now();
                                                                             }
                                                                         }
                                                                         Err(_) => break,
