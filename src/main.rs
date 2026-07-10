@@ -1039,20 +1039,17 @@ async fn main() -> Result<()> {
                                         }
                                     }
 
-                                    // Do upload via SCP (no ~1GB SFTP limit)
+                                    // Do upload via SSH (cat | ssh, sem limite de 1GB)
                                     if let Some((ref paths, _)) = upload_data {
                                         if let Some(server) = app.selected_server().cloned() {
-                                            app.notifications.info("Enviando via SCP...");
+                                            app.notifications.info("Enviando... (barra de progresso em breve)");
                                             let server_clone = server.clone();
                                             let paths_clone = paths.clone();
                                             let (result_tx2, result_rx2) = tokio::sync::mpsc::unbounded_channel();
-                                            let (progress_tx2, progress_rx2) = tokio::sync::mpsc::unbounded_channel::<u64>();
                                             app.sftp_op_rx = Some(result_rx2);
-                                            app.sftp_progress_rx = Some(progress_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
                                                     // Use: cat local | ssh user@host 'cat > remote'
-                                                    // Real byte-level progress, no 1GB SFTP limit
                                                     let mut ssh_args = vec![];
                                                     if server_clone.port != 22 {
                                                         ssh_args.push("-p".to_string());
@@ -1078,7 +1075,7 @@ async fn main() -> Result<()> {
                                                     };
                                                     let local_file = std::fs::File::open(local)
                                                         .map_err(|e| format!("Erro ao ler {}: {}", local, e));
-                                                    let mut child = match local_file {
+                                                    let child = match local_file {
                                                         Ok(f) => std::process::Command::new(&cmd)
                                                             .args(&final_args)
                                                             .stdin(f)
@@ -1090,39 +1087,7 @@ async fn main() -> Result<()> {
                                                     };
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // Read stdout to get byte count for real progress
-                                                            let stdout = proc.stdout.take().unwrap();
-                                                            let ptx = progress_tx2.clone();
-                                                            let total = std::fs::metadata(local).map(|m| m.len()).unwrap_or(0);
-                                                            let start = std::time::Instant::now();
-                                                            std::thread::spawn(move || {
-                                                                use std::io::Read;
-                                                                let mut buf = [0u8; 65536];
-                                                                let mut reader = stdout;
-                                                                let mut bytes_read: u64 = 0;
-                                                                let mut last_update = std::time::Instant::now();
-                                                                loop {
-                                                                    match reader.read(&mut buf) {
-                                                                        Ok(0) => break,
-                                                                        Ok(n) => {
-                                                                            bytes_read += n as u64;
-                                                                            // Update progress every 200ms
-                                                                            if last_update.elapsed().as_millis() >= 200 {
-                                                                                let pct = if total > 0 {
-                                                                                    (bytes_read * 100 / total).min(99)
-                                                                                } else {
-                                                                                    0
-                                                                                };
-                                                                                let _ = ptx.send(pct);
-                                                                                last_update = std::time::Instant::now();
-                                                                            }
-                                                                        }
-                                                                        Err(_) => break,
-                                                                    }
-                                                                }
-                                                            });
                                                             let _ = proc.wait();
-                                                            let _ = progress_tx2.send(100);
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
                                                         }
                                                         Err(e) => {
