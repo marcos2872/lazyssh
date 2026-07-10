@@ -315,7 +315,7 @@ pub fn render_sftp_browser(f: &mut Frame, state: &SftpState) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),      // Áreas dos painéis
-                Constraint::Length(1),   // Input line
+                Constraint::Length(3),   // Input line (bordas ALL = 3 linhas)
                 Constraint::Length(3),   // Barra de status/ajuda
             ])
             .split(area)
