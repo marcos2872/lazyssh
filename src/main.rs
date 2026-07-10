@@ -1156,7 +1156,7 @@ async fn main() -> Result<()> {
                                     // Do download via SSH (cat remote > local)
                                     if let Some((ref paths, _)) = download_data {
                                         if let Some(server) = app.selected_server().cloned() {
-                                            app.notifications.info("Baixando...");
+                                            app.notifications.info("Baixando... (barra de progresso em breve)");
                                             let server_clone = server.clone();
                                             let paths_clone = paths.clone();
                                             let (result_tx2, result_rx2) = tokio::sync::mpsc::unbounded_channel();

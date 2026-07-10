@@ -479,10 +479,14 @@ fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rec
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
         let time_str = format!("{:02}:{:02}", elapsed / 60, elapsed % 60);
+        let (action, color) = state.transfer_progress
+            .as_ref()
+            .map(|p| if p.is_upload { ("Enviando", Theme::success()) } else { ("Baixando", Theme::primary()) })
+            .unwrap_or(("Transferindo", Theme::warning()));
         let transfer_msg = Line::from(vec![
             Span::styled(
-                " ⏳ Enviando... ",
-                Style::default().fg(Theme::warning()).add_modifier(Modifier::BOLD),
+                format!(" ⏳ {}... ", action),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 &time_str,
