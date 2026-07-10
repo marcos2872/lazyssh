@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
                     if let Some(ref state) = app.insert_state {
                         let area = f.area();
                         let is_key = state.is_key_auth();
-                        let height: u16 = if is_key { 14 } else { 12 };
+                        let height: u16 = if is_key { 16 } else { 14 };
                         let width: u16 = 50;
                         let x = (area.width - width) / 2;
                         let y = (area.height - height) / 2;
@@ -242,33 +242,53 @@ async fn main() -> Result<()> {
 
                         // Título estilizado
                         lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled("  ➕ Novo Servidor  ", 
+                            ratatui::text::Span::styled("  ➕ Novo Servidor  ",
                                 ratatui::style::Style::default().fg(Theme::accent()).add_modifier(ratatui::style::Modifier::BOLD)),
                         ]));
                         lines.push(ratatui::text::Line::from("─".repeat(width as usize - 2)));
 
-                        // Campos fixos
+                        // Campos fixos (Auth shows as toggle)
                         let base_fields = [
                             (tui::app::InsertField::Name, "📝 Nome", &state.name),
                             (tui::app::InsertField::Host, "🌐 Host", &state.host),
                             (tui::app::InsertField::Port, "🔌 Porta", &state.port),
                             (tui::app::InsertField::User, "👤 Usuário", &state.user),
-                            (tui::app::InsertField::AuthType, "🔐 Auth", &state.auth_type),
                         ];
 
                         for (field_type, label, value) in &base_fields {
                             let is_active = &state.field == field_type;
                             let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active { 
+                            let style = if is_active {
                                 ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else { 
-                                ratatui::style::Style::default().fg(Theme::text()) 
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
                             };
                             lines.push(ratatui::text::Line::from(vec![
                                 ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
                                 ratatui::text::Span::styled(format!("{}: ", label), ratatui::style::Style::default().fg(Theme::secondary())),
                                 ratatui::text::Span::styled(*value, style),
                             ]));
+                        }
+
+                        // Auth type as toggle
+                        {
+                            let is_active = state.field == tui::app::InsertField::AuthType;
+                            let marker = if is_active { "▶" } else { " " };
+                            let auth_label = if is_key { "key" } else { "password" };
+                            let style = if is_active {
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
+                            };
+                            let mut spans = vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔐 Auth: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(format!("[{}]", auth_label), style),
+                            ];
+                            if is_active {
+                                spans.push(ratatui::text::Span::styled(" ← →", ratatui::style::Style::default().fg(Theme::text_dim())));
+                            }
+                            lines.push(ratatui::text::Line::from(spans));
                         }
 
                         // Campos dinâmicos baseado no auth type
@@ -313,6 +333,23 @@ async fn main() -> Result<()> {
                             ]));
                         }
 
+                        // Tags
+                        {
+                            let is_active = state.field == tui::app::InsertField::Tags;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active {
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
+                            };
+                            let tags_display = if state.tags.is_empty() { " (nenhuma)" } else { &state.tags };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🏷️ Tags: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(tags_display, style),
+                            ]));
+                        }
+
                         lines.push(ratatui::text::Line::from(""));
                         lines.push(ratatui::text::Line::from(vec![
                             ratatui::text::Span::styled("  ↑/↓/Tab: próximo campo  ", ratatui::style::Style::default().fg(Theme::text_dim())),
@@ -332,7 +369,7 @@ async fn main() -> Result<()> {
                     } else if let Some(ref edit) = app.edit_state {
                         let area = f.area();
                         let is_key = edit.is_key_auth();
-                        let height: u16 = if is_key { 15 } else { 13 };
+                        let height: u16 = if is_key { 17 } else { 15 };
                         let width: u16 = 50;
                         let x = (area.width - width) / 2;
                         let y = (area.height - height) / 2;
@@ -342,33 +379,53 @@ async fn main() -> Result<()> {
 
                         // Título estilizado
                         lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled("  ✏️ Editar Servidor  ", 
+                            ratatui::text::Span::styled("  ✏️ Editar Servidor  ",
                                 ratatui::style::Style::default().fg(Theme::accent()).add_modifier(ratatui::style::Modifier::BOLD)),
                         ]));
                         lines.push(ratatui::text::Line::from("─".repeat(width as usize - 2)));
 
-                        // Campos fixos
+                        // Campos fixos (Auth as toggle)
                         let base_fields = [
                             (tui::app::EditField::Name, "📝 Nome", &edit.name),
                             (tui::app::EditField::Host, "🌐 Host", &edit.host),
                             (tui::app::EditField::Port, "🔌 Porta", &edit.port),
                             (tui::app::EditField::User, "👤 Usuário", &edit.user),
-                            (tui::app::EditField::AuthType, "🔐 Auth", &edit.auth_type),
                         ];
 
                         for (field_type, label, value) in &base_fields {
                             let is_active = &edit.field == field_type;
                             let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active { 
+                            let style = if is_active {
                                 ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else { 
-                                ratatui::style::Style::default().fg(Theme::text()) 
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
                             };
                             lines.push(ratatui::text::Line::from(vec![
                                 ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
                                 ratatui::text::Span::styled(format!("{}: ", label), ratatui::style::Style::default().fg(Theme::secondary())),
                                 ratatui::text::Span::styled(*value, style),
                             ]));
+                        }
+
+                        // Auth type as toggle
+                        {
+                            let is_active = edit.field == tui::app::EditField::AuthType;
+                            let marker = if is_active { "▶" } else { " " };
+                            let auth_label = if is_key { "key" } else { "password" };
+                            let style = if is_active {
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
+                            };
+                            let mut spans = vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🔐 Auth: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(format!("[{}]", auth_label), style),
+                            ];
+                            if is_active {
+                                spans.push(ratatui::text::Span::styled(" ← →", ratatui::style::Style::default().fg(Theme::text_dim())));
+                            }
+                            lines.push(ratatui::text::Line::from(spans));
                         }
 
                         // Campos dinâmicos baseado no auth type
@@ -410,6 +467,23 @@ async fn main() -> Result<()> {
                                 ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
                                 ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
                                 ratatui::text::Span::styled(&edit.password, style),
+                            ]));
+                        }
+
+                        // Tags
+                        {
+                            let is_active = edit.field == tui::app::EditField::Tags;
+                            let marker = if is_active { "▶" } else { " " };
+                            let style = if is_active {
+                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
+                            } else {
+                                ratatui::style::Style::default().fg(Theme::text())
+                            };
+                            let tags_display = if edit.tags.is_empty() { " (nenhuma)" } else { &edit.tags };
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
+                                ratatui::text::Span::styled("🏷️ Tags: ", ratatui::style::Style::default().fg(Theme::secondary())),
+                                ratatui::text::Span::styled(tags_display, style),
                             ]));
                         }
 
@@ -633,6 +707,13 @@ async fn main() -> Result<()> {
                                             KeyCode::Up => {
                                                 state.prev_field();
                                             }
+                                            // Space toggles auth type when on AuthType field
+                                            KeyCode::Char(' ') if state.field == tui::app::InsertField::AuthType => {
+                                                state.toggle_auth_type();
+                                            }
+                                            KeyCode::Left | KeyCode::Right if state.field == tui::app::InsertField::AuthType => {
+                                                state.toggle_auth_type();
+                                            }
                                             KeyCode::Char(c) => {
                                                 state.current_value_mut().push(c);
                                             }
@@ -640,12 +721,8 @@ async fn main() -> Result<()> {
                                                 state.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                // Salvar no último campo baseado no auth type
-                                                let should_save = if state.is_key_auth() {
-                                                    matches!(state.field, tui::app::InsertField::Passphrase)
-                                                } else {
-                                                    matches!(state.field, tui::app::InsertField::Password)
-                                                };
+                                                // Save on Tags field (last field for both auth types)
+                                                let should_save = matches!(state.field, tui::app::InsertField::Tags);
 
                                                 if should_save {
                                                     let name = state.name.clone();
@@ -653,6 +730,10 @@ async fn main() -> Result<()> {
                                                     let port: u16 = state.port.parse().unwrap_or(22);
                                                     let user = state.user.clone();
                                                     let auth = state.build_auth();
+                                                    let tags: Vec<String> = state.tags.split(',')
+                                                        .map(|s| s.trim().to_string())
+                                                        .filter(|s| !s.is_empty())
+                                                        .collect();
 
                                                     if !name.is_empty() && !host.is_empty() {
                                                         let server = config::Server {
@@ -661,13 +742,13 @@ async fn main() -> Result<()> {
                                                             port,
                                                             user,
                                                             auth,
-                                                            tags: vec![],
+                                                            tags,
                                                             pinned: false,
                                                             last_connected: None,
                                                             connection_count: 0,
-            bookmarks: vec![],
-            agent_forwarding: false,
-            proxy_jump: None,
+                                                            bookmarks: vec![],
+                                                            agent_forwarding: false,
+                                                            proxy_jump: None,
 
 
                                                         };
@@ -702,6 +783,12 @@ async fn main() -> Result<()> {
                                             KeyCode::Up => {
                                                 edit.prev_field();
                                             }
+                                            KeyCode::Char(' ') if edit.field == tui::app::EditField::AuthType => {
+                                                edit.toggle_auth_type();
+                                            }
+                                            KeyCode::Left | KeyCode::Right if edit.field == tui::app::EditField::AuthType => {
+                                                edit.toggle_auth_type();
+                                            }
                                             KeyCode::Char(c) => {
                                                 edit.current_value_mut().push(c);
                                             }
@@ -709,12 +796,8 @@ async fn main() -> Result<()> {
                                                 edit.current_value_mut().pop();
                                             }
                                             KeyCode::Enter => {
-                                                // Salvar no último campo baseado no auth type
-                                                let should_save = if edit.is_key_auth() {
-                                                    matches!(edit.field, tui::app::EditField::Passphrase)
-                                                } else {
-                                                    matches!(edit.field, tui::app::EditField::Password)
-                                                };
+                                                // Save on Tags field (last field)
+                                                let should_save = matches!(edit.field, tui::app::EditField::Tags);
 
                                                 if should_save {
                                                     let index = edit.server_index;
@@ -723,6 +806,10 @@ async fn main() -> Result<()> {
                                                     let port: u16 = edit.port.parse().unwrap_or(22);
                                                     let user = edit.user.clone();
                                                     let auth = edit.build_auth();
+                                                    let tags: Vec<String> = edit.tags.split(',')
+                                                        .map(|s| s.trim().to_string())
+                                                        .filter(|s| !s.is_empty())
+                                                        .collect();
 
                                                     if let Some(server) = app.servers.get_mut(index) {
                                                         server.name = name.clone();
@@ -730,6 +817,7 @@ async fn main() -> Result<()> {
                                                         server.port = port;
                                                         server.user = user;
                                                         server.auth = auth;
+                                                        server.tags = tags;
                                                         let _ = config::save_config(
                                                             &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                             &config::get_config_path(),

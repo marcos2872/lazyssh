@@ -18,6 +18,7 @@ pub enum EditField {
     KeyPath,
     Passphrase,
     Password,
+    Tags,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,7 @@ pub struct EditState {
     pub key_path: String,
     pub passphrase: String,
     pub password: String,
+    pub tags: String,
     pub server_index: usize,
 }
 
@@ -54,6 +56,7 @@ impl EditState {
             key_path,
             passphrase,
             password: String::new(),
+            tags: server.tags.join(", "),
             server_index: index,
         }
     }
@@ -72,6 +75,7 @@ impl EditState {
             EditField::KeyPath => &self.key_path,
             EditField::Passphrase => &self.passphrase,
             EditField::Password => &self.password,
+            EditField::Tags => &self.tags,
         }
     }
 
@@ -85,6 +89,7 @@ impl EditState {
             EditField::KeyPath => &mut self.key_path,
             EditField::Passphrase => &mut self.passphrase,
             EditField::Password => &mut self.password,
+            EditField::Tags => &mut self.tags,
         }
     }
 
@@ -97,7 +102,8 @@ impl EditState {
                 EditField::User => EditField::AuthType,
                 EditField::AuthType => EditField::KeyPath,
                 EditField::KeyPath => EditField::Passphrase,
-                EditField::Passphrase => EditField::Name,
+                EditField::Passphrase => EditField::Tags,
+                EditField::Tags => EditField::Name,
                 _ => EditField::Name,
             }
         } else {
@@ -107,7 +113,8 @@ impl EditState {
                 EditField::Port => EditField::User,
                 EditField::User => EditField::AuthType,
                 EditField::AuthType => EditField::Password,
-                EditField::Password => EditField::Name,
+                EditField::Password => EditField::Tags,
+                EditField::Tags => EditField::Name,
                 _ => EditField::Name,
             }
         };
@@ -116,23 +123,25 @@ impl EditState {
     pub fn prev_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
-                EditField::Name => EditField::Passphrase,
+                EditField::Name => EditField::Tags,
                 EditField::Host => EditField::Name,
                 EditField::Port => EditField::Host,
                 EditField::User => EditField::Port,
                 EditField::AuthType => EditField::User,
                 EditField::KeyPath => EditField::AuthType,
                 EditField::Passphrase => EditField::KeyPath,
+                EditField::Tags => EditField::Passphrase,
                 _ => EditField::Name,
             }
         } else {
             match self.field {
-                EditField::Name => EditField::Password,
+                EditField::Name => EditField::Tags,
                 EditField::Host => EditField::Name,
                 EditField::Port => EditField::Host,
                 EditField::User => EditField::Port,
                 EditField::AuthType => EditField::User,
                 EditField::Password => EditField::AuthType,
+                EditField::Tags => EditField::Password,
                 _ => EditField::Name,
             }
         };
@@ -158,6 +167,14 @@ impl EditState {
             }
         }
     }
+
+    pub fn toggle_auth_type(&mut self) {
+        if self.auth_type == "key" {
+            self.auth_type = "password".to_string();
+        } else {
+            self.auth_type = "key".to_string();
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -170,6 +187,7 @@ pub enum InsertField {
     KeyPath,
     Passphrase,
     Password,
+    Tags,
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +201,7 @@ pub struct InsertState {
     pub key_path: String,
     pub passphrase: String,
     pub password: String,
+    pub tags: String,
 }
 
 impl InsertState {
@@ -197,6 +216,7 @@ impl InsertState {
             key_path: "~/.ssh/id_rsa".to_string(),
             passphrase: String::new(),
             password: String::new(),
+            tags: String::new(),
         }
     }
 
@@ -214,6 +234,7 @@ impl InsertState {
             InsertField::KeyPath => &self.key_path,
             InsertField::Passphrase => &self.passphrase,
             InsertField::Password => &self.password,
+            InsertField::Tags => &self.tags,
         }
     }
 
@@ -227,6 +248,7 @@ impl InsertState {
             InsertField::KeyPath => &mut self.key_path,
             InsertField::Passphrase => &mut self.passphrase,
             InsertField::Password => &mut self.password,
+            InsertField::Tags => &mut self.tags,
         }
     }
 
@@ -239,7 +261,8 @@ impl InsertState {
                 InsertField::User => InsertField::AuthType,
                 InsertField::AuthType => InsertField::KeyPath,
                 InsertField::KeyPath => InsertField::Passphrase,
-                InsertField::Passphrase => InsertField::Name,
+                InsertField::Passphrase => InsertField::Tags,
+                InsertField::Tags => InsertField::Name,
                 _ => InsertField::Name,
             }
         } else {
@@ -249,7 +272,8 @@ impl InsertState {
                 InsertField::Port => InsertField::User,
                 InsertField::User => InsertField::AuthType,
                 InsertField::AuthType => InsertField::Password,
-                InsertField::Password => InsertField::Name,
+                InsertField::Password => InsertField::Tags,
+                InsertField::Tags => InsertField::Name,
                 _ => InsertField::Name,
             }
         };
@@ -258,23 +282,25 @@ impl InsertState {
     pub fn prev_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
-                InsertField::Name => InsertField::Passphrase,
+                InsertField::Name => InsertField::Tags,
                 InsertField::Host => InsertField::Name,
                 InsertField::Port => InsertField::Host,
                 InsertField::User => InsertField::Port,
                 InsertField::AuthType => InsertField::User,
                 InsertField::KeyPath => InsertField::AuthType,
                 InsertField::Passphrase => InsertField::KeyPath,
+                InsertField::Tags => InsertField::Passphrase,
                 _ => InsertField::Name,
             }
         } else {
             match self.field {
-                InsertField::Name => InsertField::Password,
+                InsertField::Name => InsertField::Tags,
                 InsertField::Host => InsertField::Name,
                 InsertField::Port => InsertField::Host,
                 InsertField::User => InsertField::Port,
                 InsertField::AuthType => InsertField::User,
                 InsertField::Password => InsertField::AuthType,
+                InsertField::Tags => InsertField::Password,
                 _ => InsertField::Name,
             }
         };
@@ -298,6 +324,14 @@ impl InsertState {
                     Some(self.passphrase.clone())
                 },
             }
+        }
+    }
+
+    pub fn toggle_auth_type(&mut self) {
+        if self.auth_type == "key" {
+            self.auth_type = "password".to_string();
+        } else {
+            self.auth_type = "key".to_string();
         }
     }
 }
@@ -912,6 +946,7 @@ mod tests {
             field: EditField::Name, name: "n".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
         assert_eq!(es.current_value(), "n");
@@ -925,10 +960,11 @@ mod tests {
             field: EditField::Name, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
-        // Full cycle through 7 key-auth fields returns to Name
-        for _ in 0..7 { es.next_field(); }
+        // Full cycle through 8 key-auth fields returns to Name
+        for _ in 0..8 { es.next_field(); }
         assert_eq!(es.field, EditField::Name);
     }
 
@@ -938,6 +974,7 @@ mod tests {
             field: EditField::Name, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "password".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
         es.next_field();
@@ -950,6 +987,7 @@ mod tests {
             field: EditField::Passphrase, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
         es.prev_field();
@@ -962,6 +1000,7 @@ mod tests {
             field: EditField::Name, name: "n".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: "~/.ssh/custom".into(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
         match es.build_auth() {
@@ -979,6 +1018,7 @@ mod tests {
             field: EditField::Password, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "password".into(),
             key_path: String::new(), passphrase: String::new(), password: "vaultkey".into(),
+            tags: String::new(),
             server_index: 0,
         };
         match es.build_auth() {
@@ -993,6 +1033,7 @@ mod tests {
             field: EditField::Name, name: "old".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
             server_index: 0,
         };
         *es.current_value_mut() = "new".to_string();
@@ -1024,6 +1065,7 @@ mod tests {
             field: InsertField::Passphrase, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
         };
         is.prev_field();
         assert_eq!(is.field, InsertField::KeyPath);
