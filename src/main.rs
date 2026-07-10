@@ -1083,21 +1083,26 @@ async fn main() -> Result<()> {
                                                         .map_err(|e| format!("SCP erro: {}", e));
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // Read stderr for progress
-                                                            use std::io::BufRead;
-                                                            let stderr = proc.stderr.take().unwrap();
-                                                            let reader = std::io::BufReader::new(stderr);
-                                                            for line in reader.lines() {
-                                                                if let Ok(line) = line {
-                                                                    // SCP stderr: "filename  100%  1.2GB  00:30"
-                                                                    if let Some(pct_str) = line.split_whitespace().nth(1) {
-                                                                        if let Ok(pct) = pct_str.trim_end_matches('%').parse::<u64>() {
-                                                                            let _ = progress_tx2.send(pct);
-                                                                        }
-                                                                    }
+                                                            // SCP doesn't show progress by default.
+                                                            // Simulate progress: send increasing values while process runs.
+                                                            let total_size: u64 = std::fs::metadata(&paths_clone[0].2)
+                                                                .map(|m| m.len())
+                                                                .unwrap_or(0);
+                                                            let start = std::time::Instant::now();
+                                                            let progress_tx_clone = progress_tx2.clone();
+                                                            let progress_handle = std::thread::spawn(move || {
+                                                                loop {
+                                                                    std::thread::sleep(std::time::Duration::from_secs(1));
+                                                                    let elapsed = start.elapsed().as_secs_f64();
+                                                                    // Estimate ~10MB/s transfer speed
+                                                                    let estimated = (elapsed * 10.0 * 1024.0 * 1024.0) as u64;
+                                                                    let progress = estimated.min(total_size.saturating_sub(1));
+                                                                    let _ = progress_tx_clone.send(progress);
                                                                 }
-                                                            }
+                                                            });
                                                             let _ = proc.wait();
+                                                            let _ = progress_tx2.send(total_size); // 100%
+                                                            let _ = progress_handle.join();
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
                                                         }
                                                         Err(e) => {
