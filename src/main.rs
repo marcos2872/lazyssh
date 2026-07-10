@@ -1051,72 +1051,66 @@ async fn main() -> Result<()> {
                                             app.sftp_progress_rx = Some(progress_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
-                                                    // Build SCP command manually
-                                                    let mut args = vec![];
+                                                    // Build rsync command with real progress
+                                                    let mut ssh_opts = String::new();
                                                     if server_clone.port != 22 {
-                                                        args.push("-P".to_string());
-                                                        args.push(server_clone.port.to_string());
+                                                        ssh_opts.push_str(&format!("-p {} ", server_clone.port));
                                                     }
                                                     match &server_clone.auth {
                                                         crate::config::models::Auth::Key { path, .. } => {
                                                             let expanded = shellexpand::tilde(path).into_owned();
-                                                            args.push("-i".to_string());
-                                                            args.push(expanded);
+                                                            ssh_opts.push_str(&format!("-i {} ", expanded));
                                                         }
-                                                        crate::config::models::Auth::Password { vault_key } => {
-                                                            if !vault_key.is_empty() {
-                                                                args.insert(0, "sshpass".to_string());
-                                                                args.insert(1, "-p".to_string());
-                                                                args.insert(2, vault_key.clone());
-                                                                args.insert(3, "scp".to_string());
-                                                            }
-                                                        }
+                                                        crate::config::models::Auth::Password { .. } => {}
+                                                    }
+                                                    let mut args = vec![
+                                                        "-avP".to_string(),
+                                                    ];
+                                                    if !ssh_opts.is_empty() {
+                                                        args.push("-e".to_string());
+                                                        args.push(format!("ssh {}", ssh_opts.trim()));
                                                     }
                                                     args.push(local.to_string());
                                                     args.push(format!("{}@{}:{}", server_clone.user, server_clone.host, remote));
-                                                    let cmd = if args[0] == "sshpass" { "sshpass" } else { "scp" };
-                                                    let mut child = std::process::Command::new(cmd)
-                                                        .args(&args[if cmd == "sshpass" { 1.. } else { 0.. }])
+                                                    // For password auth, use sshpass with rsync
+                                                    let (cmd, final_args) = match &server_clone.auth {
+                                                        crate::config::models::Auth::Password { vault_key } if !vault_key.is_empty() => {
+                                                            let mut a = vec!["-p".to_string(), vault_key.clone(), "rsync".to_string()];
+                                                            a.extend(args);
+                                                            ("sshpass".to_string(), a)
+                                                        }
+                                                        _ => ("rsync".to_string(), args),
+                                                    };
+                                                    let mut child = std::process::Command::new(&cmd)
+                                                        .args(&final_args)
                                                         .stdout(std::process::Stdio::piped())
                                                         .stderr(std::process::Stdio::piped())
                                                         .spawn()
-                                                        .map_err(|e| format!("SCP erro: {}", e));
+                                                        .map_err(|e| format!("rsync erro: {}", e));
                                                     match child {
                                                         Ok(mut proc) => {
-                                                            // CRITICAL: drain stderr so SCP doesn't block on pipe buffer
+                                                            // rsync shows real progress on stderr
+                                                            // Read stderr and parse progress lines
+                                                            use std::io::BufRead;
                                                             let stderr = proc.stderr.take().unwrap();
-                                                            std::thread::spawn(move || {
-                                                                use std::io::Read;
-                                                                let mut buf = [0u8; 4096];
-                                                                let mut reader = stderr;
-                                                                loop {
-                                                                    match reader.read(&mut buf) {
-                                                                        Ok(0) => break,
-                                                                        Ok(_) => {}
-                                                                        Err(_) => break,
+                                                            let reader = std::io::BufReader::new(stderr);
+                                                            for line in reader.lines() {
+                                                                if let Ok(line) = line {
+                                                                    // rsync output: "  45%  1.2GB  12.3MB/s  00:30"
+                                                                    // Also: "1,234,567 100%  12.3MB/s  00:00"
+                                                                    for word in line.split_whitespace() {
+                                                                        if let Some(pct) = word.strip_suffix('%') {
+                                                                            if let Ok(pct_val) = pct.replace(',', "").parse::<u64>() {
+                                                                                if pct_val <= 100 {
+                                                                                    let _ = progress_tx2.send(pct_val);
+                                                                                }
+                                                                            }
+                                                                        }
                                                                     }
-                                                                }
-                                                            });
-
-                                                            // Simulate progress while process runs
-                                                            let total_size: u64 = std::fs::metadata(local)
-                                                                .map(|m| m.len())
-                                                                .unwrap_or(0);
-                                                            let start = std::time::Instant::now();
-                                                            loop {
-                                                                match proc.try_wait() {
-                                                                    Ok(Some(_)) => break,
-                                                                    Ok(None) => {
-                                                                        std::thread::sleep(std::time::Duration::from_millis(500));
-                                                                        let elapsed = start.elapsed().as_secs_f64();
-                                                                        let estimated = (elapsed * 10.0 * 1024.0 * 1024.0) as u64;
-                                                                        let progress = estimated.min(total_size.saturating_sub(1));
-                                                                        let _ = progress_tx2.send(progress);
-                                                                    }
-                                                                    Err(_) => break,
                                                                 }
                                                             }
-                                                            let _ = progress_tx2.send(total_size);
+                                                            let _ = proc.wait();
+                                                            let _ = progress_tx2.send(100);
                                                             let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
                                                         }
                                                         Err(e) => {
