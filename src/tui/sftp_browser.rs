@@ -470,58 +470,25 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
 }
 
 fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
-    // Mostrar barra de progresso se houver transferência
-    if let Some(progress) = &state.transfer_progress {
-        let pct = progress.percentage();
-        let bar_width = 30;
-        let filled = (pct as usize * bar_width / 100).min(bar_width);
-        let empty = bar_width - filled;
-
-        let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
-        let (direction, dir_color, bar_color) = if progress.is_upload {
-            ("↑ Upload", Color::Green, Theme::success())
-        } else {
-            ("↓ Download", Color::Blue, Theme::primary())
-        };
-
-        let mut spans = vec![
+    // Mostrar mensagem de transferência se ativo
+    if state.is_transferring {
+        let transfer_msg = Line::from(vec![
             Span::styled(
-                format!(" {} {} ", direction, progress.file_name),
-                Style::default().fg(dir_color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(&bar, Style::default().fg(bar_color)),
-            Span::styled(
-                format!(" {}%", pct),
-                Style::default().fg(Theme::text()).add_modifier(Modifier::BOLD),
+                " ⏳ Enviando... ",
+                Style::default().fg(Theme::warning()).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!(" ({}/{})", format_size(progress.bytes_done), format_size(progress.bytes_total)),
+                "(barra de progresso em breve)",
                 Style::default().fg(Theme::text_dim()),
             ),
-        ];
-
-        if let Some(eta) = progress.eta_secs() {
-            let eta_str = if eta < 60 {
-                format!("{}s", eta)
-            } else {
-                format!("{}m{}s", eta / 60, eta % 60)
-            };
-            spans.push(Span::styled(
-                format!(" ETA:{}", eta_str),
-                Style::default().fg(Theme::text_dim()),
-            ));
-        }
-
-        let progress_text = Line::from(spans);
-
-        let progress_bar = Paragraph::new(progress_text).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Transferindo... ")
-                .title_style(Style::default().fg(Theme::warning()).add_modifier(Modifier::BOLD))
-                .border_style(Style::default().fg(Theme::warning())),
-        );
-        f.render_widget(progress_bar, area);
+        ]);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Transferindo ")
+            .title_style(Style::default().fg(Theme::warning()).add_modifier(Modifier::BOLD))
+            .border_style(Style::default().fg(Theme::warning()));
+        let status = Paragraph::new(transfer_msg).block(block);
+        f.render_widget(status, area);
         return;
     }
 
