@@ -474,4 +474,20 @@ mod tests {
         service._test_add_session(mock_session());
         assert_eq!(service.session_count(), 2);
     }
+
+    // --- T3.2: test_connection ---
+
+    #[tokio::test]
+    async fn test_connection_invalid_address() {
+        let result = SshService::test_connection("not.a.valid.host", 22, 2).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_connection_timeout() {
+        // Port 1 on a non-routable address should timeout
+        let result = SshService::test_connection("192.0.2.1", 1, 1).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Timeout"));
+    }
 }

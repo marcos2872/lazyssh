@@ -264,4 +264,42 @@ Host s
             _ => panic!("Expected Key auth"),
         }
     }
+
+    #[test]
+    fn test_imported_tag_present() {
+        let f = make_config(
+            r#"
+Host server1
+    HostName 10.0.0.1
+"#,
+        );
+        let servers = parse_ssh_config(f.path());
+        assert!(servers[0].tags.contains(&"imported".to_string()));
+    }
+
+    #[test]
+    fn test_host_wildcard_skipped() {
+        let f = make_config(
+            r#"
+Host *
+    User default
+
+Host server1
+    HostName 1.1.1.1
+
+Host *
+    User other
+"#,
+        );
+        let servers = parse_ssh_config(f.path());
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "server1");
+    }
+
+    #[test]
+    fn test_empty_config() {
+        let f = make_config("");
+        let servers = parse_ssh_config(f.path());
+        assert!(servers.is_empty());
+    }
 }

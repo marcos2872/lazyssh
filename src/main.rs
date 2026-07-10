@@ -1717,8 +1717,8 @@ mod tests {
             },
             tags: vec![],
             pinned: false,
-                                                            last_connected: None,
-                                                            connection_count: 0,
+            last_connected: None,
+            connection_count: 0,
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
@@ -1728,5 +1728,125 @@ mod tests {
         assert!(args.contains(&"-p".to_string()));
         assert!(args.contains(&"2222".to_string()));
         assert!(args.contains(&"admin@example.com".to_string()));
+    }
+
+    // --- T3.3: agent_forwarding ---
+
+    #[test]
+    fn test_native_shell_command_agent_forwarding() {
+        let server = crate::config::models::Server {
+            name: "af-test".into(),
+            host: "10.0.0.1".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_rsa".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+            last_connected: None,
+            connection_count: 0,
+            bookmarks: vec![],
+            agent_forwarding: true,
+            proxy_jump: None,
+        };
+        let (_, args) = native_shell_command(&server);
+        assert!(args.contains(&"-A".to_string()), "should contain -A flag");
+    }
+
+    #[test]
+    fn test_native_shell_command_no_agent_forwarding() {
+        let server = crate::config::models::Server {
+            name: "no-af".into(),
+            host: "10.0.0.1".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_rsa".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+            last_connected: None,
+            connection_count: 0,
+            bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
+        };
+        let (_, args) = native_shell_command(&server);
+        assert!(!args.contains(&"-A".to_string()), "should NOT contain -A");
+    }
+
+    // --- T3.4: proxy_jump ---
+
+    #[test]
+    fn test_native_shell_command_proxy_jump() {
+        let server = crate::config::models::Server {
+            name: "pj-test".into(),
+            host: "internal.dev".into(),
+            port: 22,
+            user: "deploy".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_rsa".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+            last_connected: None,
+            connection_count: 0,
+            bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: Some("user@bastion.example.com".to_string()),
+        };
+        let (_, args) = native_shell_command(&server);
+        assert!(args.contains(&"-J".to_string()), "should contain -J flag");
+        assert!(args.contains(&"user@bastion.example.com".to_string()), "should contain jump host");
+    }
+
+    #[test]
+    fn test_native_shell_command_no_proxy_jump() {
+        let server = crate::config::models::Server {
+            name: "no-pj".into(),
+            host: "direct.dev".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_rsa".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+            last_connected: None,
+            connection_count: 0,
+            bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: None,
+        };
+        let (_, args) = native_shell_command(&server);
+        assert!(!args.contains(&"-J".to_string()), "should NOT contain -J");
+    }
+
+    #[test]
+    fn test_native_shell_command_empty_proxy_jump() {
+        let server = crate::config::models::Server {
+            name: "empty-pj".into(),
+            host: "direct.dev".into(),
+            port: 22,
+            user: "root".into(),
+            auth: crate::config::models::Auth::Key {
+                path: "~/.ssh/id_rsa".into(),
+                passphrase: None,
+            },
+            tags: vec![],
+            pinned: false,
+            last_connected: None,
+            connection_count: 0,
+            bookmarks: vec![],
+            agent_forwarding: false,
+            proxy_jump: Some("".to_string()),
+        };
+        let (_, args) = native_shell_command(&server);
+        assert!(!args.contains(&"-J".to_string()), "empty proxy_jump should be ignored");
     }
 }
