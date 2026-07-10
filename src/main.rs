@@ -1039,38 +1039,58 @@ async fn main() -> Result<()> {
                                         }
                                     }
 
-                                    // Do upload outside sftp borrow
-                                    if let Some((ref paths, Some(ref sid))) = upload_data {
-                                        // Spawn upload as background task so TUI stays responsive
-                                        let (result_tx, result_rx) = tokio::sync::mpsc::unbounded_channel();
-                                        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
-                                        app.sftp_op_rx = Some(result_rx);
-                                        app.sftp_progress_rx = Some(progress_rx);
-                                        let sid = sid.clone();
-                                        let paths = paths.clone();
-                                        let sftp_service = app.sftp_service.clone();
-                                        // Get SftpSession Arc clone (lock dropped immediately)
-                                        let sftp_session = {
-                                            let svc = sftp_service.lock().unwrap();
-                                            svc.get_session(&sid)
-                                                .and_then(|s| s.sftp_session())
-                                        };
-                                        if let Some(session) = sftp_session {
+                                    // Do upload via SCP (no ~1GB SFTP limit)
+                                    if let Some((ref paths, _)) = upload_data {
+                                        if let Some(server) = app.selected_server().cloned() {
+                                            app.notifications.info("Enviando via SCP...");
+                                            let server_clone = server.clone();
+                                            let paths_clone = paths.clone();
+                                            let (result_tx2, result_rx2) = tokio::sync::mpsc::unbounded_channel();
+                                            app.sftp_op_rx = Some(result_rx2);
                                             tokio::task::spawn_blocking(move || {
-                                                tokio::runtime::Handle::current().block_on(async move {
-                                                    for (name, local, remote) in &paths {
-                                                        let result = sftp::upload_file(&session, &local, &remote, Some(progress_tx.clone())).await;
-                                                        match result {
-                                                            Ok(()) => {
-                                                                let _ = result_tx.send(SftpOpResult::Upload(name.clone()));
-                                                            }
-                                                            Err(e) => {
-                                                                let _ = result_tx.send(SftpOpResult::Error(format!("Erro ao enviar {}: {}", name, e)));
+                                                for (name, local, remote) in &paths_clone {
+                                                    // Build SCP command manually
+                                                    let mut args = vec![];
+                                                    if server_clone.port != 22 {
+                                                        args.push("-P".to_string());
+                                                        args.push(server_clone.port.to_string());
+                                                    }
+                                                    match &server_clone.auth {
+                                                        crate::config::models::Auth::Key { path, .. } => {
+                                                            let expanded = shellexpand::tilde(path).into_owned();
+                                                            args.push("-i".to_string());
+                                                            args.push(expanded);
+                                                        }
+                                                        crate::config::models::Auth::Password { vault_key } => {
+                                                            if !vault_key.is_empty() {
+                                                                args.insert(0, "sshpass".to_string());
+                                                                args.insert(1, "-p".to_string());
+                                                                args.insert(2, vault_key.clone());
+                                                                args.insert(3, "scp".to_string());
                                                             }
                                                         }
                                                     }
-                                                    let _ = result_tx.send(SftpOpResult::Error("__done__".to_string()));
-                                                });
+                                                    args.push(local.to_string());
+                                                    args.push(format!("{}@{}:{}", server_clone.user, server_clone.host, remote));
+                                                    let cmd = if args[0] == "sshpass" { "sshpass" } else { "scp" };
+                                                    let status = std::process::Command::new(cmd)
+                                                        .args(&args[if cmd == "sshpass" { 1.. } else { 0.. }])
+                                                        .stdout(std::process::Stdio::piped())
+                                                        .stderr(std::process::Stdio::piped())
+                                                        .status();
+                                                    match status {
+                                                        Ok(s) if s.success() => {
+                                                            let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
+                                                        }
+                                                        Ok(s) => {
+                                                            let _ = result_tx2.send(SftpOpResult::Error(format!("SCP falhou: código {}", s.code().unwrap_or(-1))));
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = result_tx2.send(SftpOpResult::Error(format!("SCP erro: {}", e)));
+                                                        }
+                                                    }
+                                                }
+                                                let _ = result_tx2.send(SftpOpResult::Error("__done__".to_string()));
                                             });
                                         }
                                     }

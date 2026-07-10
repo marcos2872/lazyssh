@@ -597,6 +597,50 @@ impl App {
         })
     }
 
+    /// Upload a file via SCP (no ~1GB SFTP limit).
+    pub fn sftp_upload_with_scp(&self, server: &crate::config::models::Server, local: &str, remote: &str) -> Result<(), String> {
+        let mut args = vec![];
+
+        if server.port != 22 {
+            args.push("-P".to_string());
+            args.push(server.port.to_string());
+        }
+
+        match &server.auth {
+            crate::config::models::Auth::Key { path, .. } => {
+                let expanded = shellexpand::tilde(path).into_owned();
+                args.push("-i".to_string());
+                args.push(expanded);
+            }
+            crate::config::models::Auth::Password { vault_key } => {
+                if !vault_key.is_empty() {
+                    // sshpass for password auth
+                    args.insert(0, "sshpass".to_string());
+                    args.insert(1, "-p".to_string());
+                    args.insert(2, vault_key.clone());
+                    args.insert(3, "scp".to_string());
+                }
+            }
+        }
+
+        args.push(local.to_string());
+        args.push(format!("{}@{}:{}", server.user, server.host, remote));
+
+        let cmd = if args[0] == "sshpass" { "sshpass" } else { "scp" };
+        let status = std::process::Command::new(cmd)
+            .args(&args[if cmd == "sshpass" { 1.. } else { 0.. }])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .map_err(|e| format!("Falha ao executar SCP: {}", e))?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("SCP falhou com código {}", status.code().unwrap_or(-1)))
+        }
+    }
+
     /// Download a file via SFTP service.
     pub fn sftp_download_file(&self, session_id: &str, remote: &str, local: &str) -> Result<(), String> {
         tokio::task::block_in_place(|| {
