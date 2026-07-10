@@ -657,7 +657,20 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     KeyCode::Enter => {
-                                        app.connect_ssh();
+                                        if let Some(server) = app.selected_server().cloned() {
+                                            match run_native_shell_handoff(&server) {
+                                                Ok(status) => {
+                                                    let message = if status.success() {
+                                                        "Conexão SSH encerrada."
+                                                    } else {
+                                                        "SSH saiu sem término bem-sucedido."
+                                                    };
+                                                    app.notifications.info(message);
+                                                    let _ = terminal.clear();
+                                                }
+                                                Err(e) => app.notifications.error(&format!("Falha ao abrir SSH: {}", e)),
+                                            }
+                                        }
                                     }
                                     _ => {}
                                 },
@@ -1421,20 +1434,17 @@ async fn main() -> Result<()> {
                             }
                         }
                         tui::app::CurrentView::SshTerminal => {
-                            // Ctrl+Q, Esc, or q to disconnect active tab
+                            // Ctrl+Q or Esc to disconnect active tab
                             if (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q'))
                                 || key.code == KeyCode::Esc
-                                || key.code == KeyCode::Char('q')
                             {
                                 app.close_active_tab();
                             // Ctrl+W: close active tab
                             } else if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('w') {
                                 app.close_active_tab();
-                            // L: toggle session log
-                            } else if key.code == KeyCode::Char('l') || key.code == KeyCode::Char('L') {
-                                if key.modifiers.is_empty() {
-                                    app.toggle_ssh_log();
-                                }
+                            // Ctrl+L: toggle session log
+                            } else if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('l') {
+                                app.toggle_ssh_log();
                             // Tab: next tab
                             } else if key.code == KeyCode::Tab && key.modifiers.is_empty() {
                                 app.next_tab();
