@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, render_ssh_terminal, App, SftpOpResult, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, App, SftpOpResult, Theme};
 
 struct CleanupGuard;
 
@@ -95,16 +95,36 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
     leave_tui()?;
 
     let status = if server.log_enabled {
-        // Use `script` to log the session
         let home = std::env::var("HOME").unwrap_or_default();
         let log_dir = format!("{}/.local/share/lazyssh/logs", home);
         let _ = std::fs::create_dir_all(&log_dir);
         let now = chrono::Local::now();
         let logfile = format!("{}/{}_{}.log", log_dir, server.name, now.format("%Y%m%d_%H%M%S"));
-        Command::new("script")
-            .args(["-q", "-f", &logfile, "-c", &format!("{} {}", command, args.join(" "))])
+        let mut full_cmd = command.clone();
+        for a in &args {
+            full_cmd.push(' ');
+            if a.contains(' ') {
+                full_cmd.push('"');
+                full_cmd.push_str(a);
+                full_cmd.push('"');
+            } else {
+                full_cmd.push_str(a);
+            }
+        }
+        // Try script -q (no -f for compatibility), fall back to no logging
+        match Command::new("script")
+            .args(["-q", &logfile, "-c", &full_cmd])
             .status()
-            .with_context(|| "failed to start `script`")?
+        {
+            Ok(s) => s,
+            Err(_) => {
+                // script not available, run without logging
+                Command::new(&command)
+                    .args(&args)
+                    .status()
+                    .with_context(|| format!("failed to start `{}`", command))?
+            }
+        }
     } else {
         Command::new(&command)
             .args(args)
@@ -118,6 +138,7 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
 }
 
 // Helper: convert crossterm key events to byte sequences for the remote PTY
+#[allow(dead_code)]
 fn key_event_to_bytes(ev: &KeyEvent) -> Vec<u8> {
     let mods = ev.modifiers;
     match ev.code {

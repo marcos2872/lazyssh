@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 use super::effects::AppEffects;
 use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
-use super::ssh_terminal::SshTerminalState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EditField {
