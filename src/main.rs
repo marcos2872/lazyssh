@@ -111,9 +111,9 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
                 full_cmd.push_str(a);
             }
         }
-        // Try script -q (no -f for compatibility), fall back to no logging
+        // script [options] -c command logfile
         match Command::new("script")
-            .args(["-q", &logfile, "-c", &full_cmd])
+            .args(["-q", "-c", &full_cmd, &logfile])
             .status()
         {
             Ok(s) => s,
@@ -584,9 +584,6 @@ async fn main() -> Result<()> {
                                     }
                                     KeyCode::Char('l') if key.modifiers == KeyModifiers::CONTROL => {
                                         app.toggle_server_log();
-                                    }
-                                    KeyCode::Char('h') if key.modifiers == KeyModifiers::CONTROL => {
-                                        app.toggle_server_history();
                                     }
                                     KeyCode::Char('e') => {
                                         if let Some(server) = app.selected_server() {
