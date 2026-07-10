@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, App, SftpOpResult, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, App, NotificationQueue, SftpOpResult, Theme};
 
 struct CleanupGuard;
 
@@ -89,12 +89,28 @@ fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
     ("ssh".to_string(), ssh_args)
 }
 
-fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
+fn check_script_available() -> bool {
+    std::process::Command::new("which")
+        .arg("script")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn run_native_shell_handoff(server: &config::Server, notifications: &mut NotificationQueue) -> Result<ExitStatus> {
     let (command, args) = native_shell_command(server);
+
+    // Check if script is available BEFORE leaving TUI so we can notify the user
+    let use_script = server.log_enabled && check_script_available();
+    if server.log_enabled && !use_script {
+        notifications.warning("Comando 'script' não encontrado. Log desabilitado. Instale com: sudo apt install util-linux");
+    }
 
     leave_tui()?;
 
-    let status = if server.log_enabled {
+    let status = if use_script {
         let home = std::env::var("HOME").unwrap_or_default();
         let log_dir = format!("{}/.local/share/lazyssh/logs", home);
         let _ = std::fs::create_dir_all(&log_dir);
@@ -111,20 +127,10 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
                 full_cmd.push_str(a);
             }
         }
-        // script [options] -c command logfile
-        match Command::new("script")
+        Command::new("script")
             .args(["-q", "-c", &full_cmd, &logfile])
             .status()
-        {
-            Ok(s) => s,
-            Err(_) => {
-                // script not available, run without logging
-                Command::new(&command)
-                    .args(&args)
-                    .status()
-                    .with_context(|| format!("failed to start `{}`", command))?
-            }
-        }
+            .with_context(|| "failed to start `script`")?
     } else {
         Command::new(&command)
             .args(args)
@@ -634,7 +640,7 @@ async fn main() -> Result<()> {
                                     }
                                     KeyCode::Enter => {
                                         if let Some(server) = app.selected_server().cloned() {
-                                            match run_native_shell_handoff(&server) {
+                                            match run_native_shell_handoff(&server, &mut app.notifications) {
                                                 Ok(status) => {
                                                     let message = if status.success() {
                                                         "Conexão SSH encerrada."
@@ -1462,7 +1468,7 @@ async fn main() -> Result<()> {
                                     if clicked_index < app.filtered_indices.len() {
                                         app.selected = clicked_index;
                                         match app.selected_server().cloned() {
-                                            Some(server) => match run_native_shell_handoff(&server) {
+                                            Some(server) => match run_native_shell_handoff(&server, &mut app.notifications) {
                                                 Ok(status) => {
                                                     let message = if status.success() {
                                                         "Conexão SSH encerrada."
