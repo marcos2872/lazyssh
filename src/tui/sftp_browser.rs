@@ -583,8 +583,8 @@ fn render_sftp_input(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
     let input = Paragraph::new(input_line).block(block);
     f.render_widget(input, area);
 
-    // Position cursor
-    let cursor_x = area.x + 2 + state.input_cursor as u16;
+    // Position cursor: +1 for left border, +2 for text prefix spaces
+    let cursor_x = area.x + 3 + state.input_cursor as u16;
     let cursor_y = area.y + 1;
     f.set_cursor_position((cursor_x, cursor_y));
 }
