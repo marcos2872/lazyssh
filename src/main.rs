@@ -94,6 +94,11 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
 
     leave_tui()?;
 
+    // Clear terminal before opening SSH session
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1b[2J\x1b[H");
+    let _ = std::io::stdout().flush();
+
     let status = Command::new(&command)
         .args(args)
         .status()
