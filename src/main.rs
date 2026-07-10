@@ -887,6 +887,7 @@ async fn main() -> Result<()> {
                                             if let Some(sftp) = &mut app.sftp_state {
                                                 sftp.input_mode = tui::sftp_browser::SftpInputMode::None;
                                                 sftp.input_buffer.clear();
+                                                sftp.input_cursor = 0;
                                             }
                                         }
                                         KeyCode::Enter => {
@@ -976,12 +977,48 @@ async fn main() -> Result<()> {
                                         }
                                         KeyCode::Char(c) => {
                                             if let Some(sftp) = &mut app.sftp_state {
-                                                sftp.input_buffer.push(c);
+                                                let pos = sftp.input_cursor;
+                                                sftp.input_buffer.insert(pos, c);
+                                                sftp.input_cursor += 1;
                                             }
                                         }
                                         KeyCode::Backspace => {
                                             if let Some(sftp) = &mut app.sftp_state {
-                                                sftp.input_buffer.pop();
+                                                if sftp.input_cursor > 0 {
+                                                    sftp.input_cursor -= 1;
+                                                    sftp.input_buffer.remove(sftp.input_cursor);
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Delete => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                if sftp.input_cursor < sftp.input_buffer.len() {
+                                                    sftp.input_buffer.remove(sftp.input_cursor);
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Left => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                if sftp.input_cursor > 0 {
+                                                    sftp.input_cursor -= 1;
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Right => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                if sftp.input_cursor < sftp.input_buffer.len() {
+                                                    sftp.input_cursor += 1;
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Home => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                sftp.input_cursor = 0;
+                                            }
+                                        }
+                                        KeyCode::End => {
+                                            if let Some(sftp) = &mut app.sftp_state {
+                                                sftp.input_cursor = sftp.input_buffer.len();
                                             }
                                         }
                                         _ => {}
@@ -1357,6 +1394,7 @@ async fn main() -> Result<()> {
                                         } else {
                                             sftp.input_mode = tui::sftp_browser::SftpInputMode::Mkdir;
                                             sftp.input_buffer.clear();
+                                            sftp.input_cursor = 0;
                                         }
                                     }
                                 }
@@ -1369,6 +1407,7 @@ async fn main() -> Result<()> {
                                             if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {
                                                 sftp.input_mode = tui::sftp_browser::SftpInputMode::Rename;
                                                 sftp.input_buffer = file.name.clone();
+                                                sftp.input_cursor = sftp.input_buffer.len();
                                             }
                                         }
                                     }
@@ -1418,6 +1457,7 @@ async fn main() -> Result<()> {
                                                     .unwrap_or_else(|| "????".to_string());
                                                 sftp.input_mode = tui::sftp_browser::SftpInputMode::Chmod;
                                                 sftp.input_buffer = perm_str;
+                                                sftp.input_cursor = sftp.input_buffer.len();
                                             }
                                         }
                                     }
@@ -1434,6 +1474,7 @@ async fn main() -> Result<()> {
                                                 .unwrap_or("root")
                                                 .to_string();
                                             sftp.input_buffer = default_name;
+                                            sftp.input_cursor = sftp.input_buffer.len();
                                         }
                                     }
                                 }

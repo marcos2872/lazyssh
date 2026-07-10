@@ -77,6 +77,7 @@ pub struct SftpState {
     pub session_id: Option<String>,
     pub input_mode: SftpInputMode,
     pub input_buffer: String,
+    pub input_cursor: usize,
     pub transfer_start: Option<std::time::Instant>,
 }
 
@@ -108,6 +109,7 @@ impl SftpState {
             session_id: None,
             input_mode: SftpInputMode::None,
             input_buffer: String::new(),
+            input_cursor: 0,
             transfer_start: None,
         }
     }
@@ -582,7 +584,7 @@ fn render_sftp_input(f: &mut Frame, state: &SftpState, area: ratatui::layout::Re
     f.render_widget(input, area);
 
     // Position cursor
-    let cursor_x = area.x + 2 + state.input_buffer.len() as u16;
+    let cursor_x = area.x + 2 + state.input_cursor as u16;
     let cursor_y = area.y + 1;
     f.set_cursor_position((cursor_x, cursor_y));
 }
