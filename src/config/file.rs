@@ -44,7 +44,7 @@ pub fn save_config(config: &AppConfig, path: &std::path::Path) -> Result<()> {
     for server in &mut config_for_save.servers {
         let should_clear = if let Auth::Password { ref vault_key } = server.auth {
             if !vault_key.is_empty() {
-                keyring::store_password(server, vault_key)
+                keyring::store_password(server, vault_key).is_ok()
             } else {
                 false
             }

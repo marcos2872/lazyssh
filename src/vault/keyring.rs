@@ -6,20 +6,11 @@ fn account_key(server: &Server) -> String {
     format!("{}@{}:{}", server.user, server.host, server.port)
 }
 
-pub fn store_password(server: &Server, password: &str) -> bool {
-    match keyring::Entry::new(SERVICE, &account_key(server)) {
-        Ok(entry) => match entry.set_password(password) {
-            Ok(()) => true,
-            Err(e) => {
-                eprintln!("keyring: falha ao armazenar senha: {}", e);
-                false
-            }
-        },
-        Err(e) => {
-            eprintln!("keyring: falha ao criar entry: {}", e);
-            false
-        }
-    }
+pub fn store_password(server: &Server, password: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(SERVICE, &account_key(server))
+        .map_err(|e| format!("keyring entry: {}", e))?;
+    entry.set_password(password)
+        .map_err(|e| format!("keyring store: {}", e))
 }
 
 pub fn get_password(server: &Server) -> Option<String> {
@@ -29,10 +20,9 @@ pub fn get_password(server: &Server) -> Option<String> {
     }
 }
 
-pub fn delete_password(server: &Server) -> bool {
-    match keyring::Entry::new(SERVICE, &account_key(server)) {
-        Ok(entry) => entry.delete_credential().is_ok(),
-        Err(_) => false,
+pub fn delete_password(server: &Server) {
+    if let Ok(entry) = keyring::Entry::new(SERVICE, &account_key(server)) {
+        let _ = entry.delete_credential();
     }
 }
 
@@ -76,9 +66,9 @@ mod tests {
     #[ignore] // requires real keyring
     fn test_store_get_delete_roundtrip() {
         let server = test_server();
-        assert!(store_password(&server, "test_pass_123"));
+        assert!(store_password(&server, "test_pass_123").is_ok());
         assert_eq!(get_password(&server), Some("test_pass_123".into()));
-        assert!(delete_password(&server));
+        delete_password(&server);
         assert_eq!(get_password(&server), None);
     }
 
