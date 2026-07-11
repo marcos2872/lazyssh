@@ -466,10 +466,12 @@ async fn main() -> Result<()> {
                                             server.pinned = !server.pinned;
                                             let status = if server.pinned { "fixado" } else { "desafixado" };
                                             app.notifications.success(&format!("Servidor {}!", status));
-                                            let _ = config::save_config(
+                                            if let Err(e) = config::save_config(
                                                 &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                 &config::get_config_path(),
-                                            );
+                                            ) {
+                                                app.notifications.warning(&format!("Falha ao salvar config: {}", e));
+                                            }
                                         }
                                     }
                                     KeyCode::Char('d') => {
@@ -577,10 +579,12 @@ async fn main() -> Result<()> {
                                                                 };
                                                                 app.servers.push(server);
                                                                 app.filter(&app.input.clone());
-                                                                let _ = config::save_config(
+                                                                if let Err(e) = config::save_config(
                                                                     &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                                     &config::get_config_path(),
-                                                                );
+                                                                ) {
+                                                                    app.notifications.warning(&format!("Falha ao salvar config: {}", e));
+                                                                }
                                                                 app.notifications.success(&format!("Servidor '{}' adicionado!", name));
                                                             } else {
                                                                 app.notifications.warning("Nome e Host são obrigatórios.");
@@ -594,10 +598,12 @@ async fn main() -> Result<()> {
                                                                 server.user = user;
                                                                 server.auth = auth;
                                                                 server.tags = tags;
-                                                                let _ = config::save_config(
+                                                                if let Err(e) = config::save_config(
                                                                     &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                                     &config::get_config_path(),
-                                                                );
+                                                                ) {
+                                                                    app.notifications.warning(&format!("Falha ao salvar config: {}", e));
+                                                                }
                                                                 app.notifications.success(&format!("Servidor '{}' atualizado!", name));
                                                             }
                                                         }
@@ -639,10 +645,12 @@ async fn main() -> Result<()> {
                                                     app.servers.retain(|s| s.name != name);
                                                     app.filter(&app.input.clone());
                                                     app.notifications.success(&format!("Servidor '{}' removido.", name));
-                                                    let _ = config::save_config(
+                                                    if let Err(e) = config::save_config(
                                                         &config::AppConfig { servers: app.servers.clone(), sort_by: None },
                                                         &config::get_config_path(),
-                                                    );
+                                                    ) {
+                                                        app.notifications.warning(&format!("Falha ao salvar config: {}", e));
+                                                    }
                                                 }
                                             }
                                         }
@@ -720,10 +728,12 @@ async fn main() -> Result<()> {
                                                                 if let Some(idx) = server_idx {
                                                                     if let Some(server) = app.servers.get_mut(idx) {
                                                                         server.bookmarks.push(bookmark);
-                                                                        let _ = crate::config::save_config(
+                                                                        if let Err(e) = crate::config::save_config(
                                                                             &crate::config::AppConfig { servers: app.servers.clone(), sort_by: app.sort_by.clone() },
                                                                             &crate::config::get_config_path(),
-                                                                        );
+                                                                        ) {
+                                                                            app.notifications.warning(&format!("Falha ao salvar config: {}", e));
+                                                                        }
                                                                         Ok(())
                                                                     } else {
                                                                         Err("Server not found".to_string())

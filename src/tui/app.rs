@@ -91,7 +91,7 @@ impl FormState {
     }
 
     pub fn is_key_auth(&self) -> bool {
-        self.auth_type.to_lowercase() == "key"
+        self.auth_type == "key"
     }
 
     pub fn current_value(&self) -> &str {
@@ -133,7 +133,7 @@ impl FormState {
                 FormField::KeyPath => FormField::Passphrase,
                 FormField::Passphrase => FormField::Tags,
                 FormField::Tags => FormField::Name,
-                _ => FormField::Name,
+                FormField::Password => FormField::Name,
             }
         } else {
             match self.field {
@@ -144,7 +144,7 @@ impl FormState {
                 FormField::AuthType => FormField::Password,
                 FormField::Password => FormField::Tags,
                 FormField::Tags => FormField::Name,
-                _ => FormField::Name,
+                FormField::KeyPath | FormField::Passphrase => FormField::Name,
             }
         };
     }
@@ -160,7 +160,7 @@ impl FormState {
                 FormField::KeyPath => FormField::AuthType,
                 FormField::Passphrase => FormField::KeyPath,
                 FormField::Tags => FormField::Passphrase,
-                _ => FormField::Name,
+                FormField::Password => FormField::Name,
             }
         } else {
             match self.field {
@@ -171,13 +171,13 @@ impl FormState {
                 FormField::AuthType => FormField::User,
                 FormField::Password => FormField::AuthType,
                 FormField::Tags => FormField::Password,
-                _ => FormField::Name,
+                FormField::KeyPath | FormField::Passphrase => FormField::Name,
             }
         };
     }
 
     pub fn build_auth(&self) -> Auth {
-        if self.auth_type.to_lowercase() == "password" {
+        if self.auth_type == "password" {
             Auth::Password {
                 vault_key: self.password.clone(),
             }
@@ -391,13 +391,15 @@ impl App {
         if added > 0 {
             self.filtered_indices = (0..self.servers.len()).collect();
             self.selected = 0;
-            let _ = crate::config::save_config(
+            if let Err(e) = crate::config::save_config(
                 &crate::config::AppConfig {
                     servers: self.servers.clone(),
                     sort_by: None,
                 },
                 &crate::config::get_config_path(),
-            );
+            ) {
+                self.notifications.warning(&format!("Falha ao salvar config: {}", e));
+            }
         }
 
         self.notifications.info(&format!(
