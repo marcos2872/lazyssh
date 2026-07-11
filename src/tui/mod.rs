@@ -1,5 +1,6 @@
 pub mod app;
 pub mod effects;
+pub mod handlers;
 pub mod help;
 pub mod modals;
 pub mod notifications;
