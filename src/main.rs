@@ -940,30 +940,9 @@ async fn main() -> Result<()> {
                                             app.sftp_op_rx = Some(result_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
-                                                    // Use: cat local | ssh user@host 'cat > remote'
-                                                    let (ref ssh_cmd, ref base_args) = crate::ssh::args::build_ssh_args(&server_clone);
-                                                    let mut final_args = base_args.clone();
-                                                    final_args.push(format!("cat > {}", remote));
-                                                    let local_file = std::fs::File::open(local)
-                                                        .map_err(|e| format!("Erro ao ler {}: {}", local, e));
-                                                    let child = match local_file {
-                                                        Ok(f) => std::process::Command::new(ssh_cmd)
-                                                            .args(&final_args)
-                                                            .stdin(f)
-                                                            .stdout(std::process::Stdio::piped())
-                                                            .stderr(std::process::Stdio::piped())
-                                                            .spawn()
-                                                            .map_err(|e| format!("ssh erro: {}", e)),
-                                                        Err(e) => Err(e),
-                                                    };
-                                                    match child {
-                                                        Ok(mut proc) => {
-                                                            let _ = proc.wait();
-                                                            let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
-                                                        }
-                                                        Err(e) => {
-                                                            let _ = result_tx2.send(SftpOpResult::Error(format!("SCP erro: {}", e)));
-                                                        }
+                                                    match crate::sftp::transfer::upload_via_ssh(&server_clone, local, remote) {
+                                                        Ok(()) => { let _ = result_tx2.send(SftpOpResult::Upload(name.clone())); }
+                                                        Err(e) => { let _ = result_tx2.send(SftpOpResult::Error(format!("SCP erro: {}", e))); }
                                                     }
                                                 }
                                                 let _ = result_tx2.send(SftpOpResult::Error("__done__".to_string()));
@@ -1034,46 +1013,9 @@ async fn main() -> Result<()> {
                                             app.sftp_op_rx = Some(result_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, remote, local) in &paths_clone {
-                                                    let (ref ssh_cmd, ref base_args) = crate::ssh::args::build_ssh_args(&server_clone);
-                                                    let mut final_args = base_args.clone();
-                                                    final_args.push(format!("cat {}", remote));
-                                                    let child = std::process::Command::new(ssh_cmd)
-                                                        .args(&final_args)
-                                                        .stdout(std::process::Stdio::piped())
-                                                        .stderr(std::process::Stdio::piped())
-                                                        .spawn()
-                                                        .map_err(|e| format!("ssh erro: {}", e));
-                                                    match child {
-                                                        Ok(mut proc) => {
-                                                            // Read stdout and write to local file
-                                                            use std::io::Read;
-                                                            use std::io::Write;
-                                                            let mut stdout = proc.stdout.take().unwrap();
-                                                            let local_file = std::fs::File::create(local)
-                                                                .map_err(|e| format!("Erro ao criar {}: {}", local, e));
-                                                            match local_file {
-                                                                Ok(mut f) => {
-                                                                    let mut buf = [0u8; 65536];
-                                                                    loop {
-                                                                        match stdout.read(&mut buf) {
-                                                                            Ok(0) => break,
-                                                                            Ok(n) => {
-                                                                                let _ = f.write_all(&buf[..n]);
-                                                                            }
-                                                                            Err(_) => break,
-                                                                        }
-                                                                    }
-                                                                    let _ = proc.wait();
-                                                                    let _ = result_tx2.send(SftpOpResult::Upload(name.clone()));
-                                                                }
-                                                                Err(e) => {
-                                                                    let _ = result_tx2.send(SftpOpResult::Error(format!("Erro: {}", e)));
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            let _ = result_tx2.send(SftpOpResult::Error(format!("ssh erro: {}", e)));
-                                                        }
+                                                    match crate::sftp::transfer::download_via_ssh(&server_clone, remote, local) {
+                                                        Ok(()) => { let _ = result_tx2.send(SftpOpResult::Upload(name.clone())); }
+                                                        Err(e) => { let _ = result_tx2.send(SftpOpResult::Error(format!("Erro: {}", e))); }
                                                     }
                                                 }
                                                 let _ = result_tx2.send(SftpOpResult::Error("__done__".to_string()));

@@ -1,5 +1,6 @@
 pub mod local;
 mod service;
+pub mod transfer;
 
 #[derive(Debug)]
 pub struct FileInfo {
