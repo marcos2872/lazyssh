@@ -1,6 +1,6 @@
 use crate::config::models::{Auth, Server};
 
-pub fn build_ssh_args(server: &Server) -> (String, Vec<String>) {
+pub fn build_ssh_args(server: &Server) -> (String, Vec<String>, Option<String>) {
     let mut ssh_args = vec![];
 
     if server.port != 22 {
@@ -27,21 +27,44 @@ pub fn build_ssh_args(server: &Server) -> (String, Vec<String>) {
         }
         Auth::Password { vault_key } => {
             if !vault_key.is_empty() {
-                let mut args = vec![
-                    "sshpass".to_string(),
-                    "-p".to_string(),
-                    vault_key.clone(),
-                    "ssh".to_string(),
-                ];
-                args.append(&mut ssh_args);
-                args.push(format!("{}@{}", server.user, server.host));
-                return ("sshpass".to_string(), args);
+                ssh_args.push(format!("{}@{}", server.user, server.host));
+                ssh_args.insert(0, "ssh".to_string());
+                return ("sshpass".to_string(), ssh_args, Some(vault_key.clone()));
             }
         }
     }
 
     ssh_args.push(format!("{}@{}", server.user, server.host));
-    ("ssh".to_string(), ssh_args)
+    ("ssh".to_string(), ssh_args, None)
+}
+
+pub fn spawn_ssh_process(
+    server: &Server,
+    extra_args: Vec<String>,
+    stdin: Option<std::process::Stdio>,
+    stdout: Option<std::process::Stdio>,
+    stderr: Option<std::process::Stdio>,
+) -> Result<std::process::Child, String> {
+    let (cmd, mut args, password) = build_ssh_args(server);
+    args.extend(extra_args);
+
+    let mut command = std::process::Command::new(&cmd);
+    command.args(&args);
+    if let Some(s) = stdin {
+        command.stdin(s);
+    }
+    if let Some(s) = stdout {
+        command.stdout(s);
+    }
+    if let Some(s) = stderr {
+        command.stderr(s);
+    }
+
+    if let Some(ref pw) = password {
+        command.env("SSHPASS", pw);
+    }
+
+    command.spawn().map_err(|e| format!("{} erro: {}", cmd, e))
 }
 
 #[cfg(test)]
@@ -72,7 +95,7 @@ mod tests {
             path: "~/.ssh/id_ed25519".into(),
             passphrase: None,
         });
-        let (cmd, args) = build_ssh_args(&server);
+        let (cmd, args, _pw) = build_ssh_args(&server);
         assert_eq!(cmd, "ssh");
         assert!(args.contains(&"-i".to_string()));
         assert!(args.contains(&"root@example.com".to_string()));
@@ -83,10 +106,13 @@ mod tests {
         let server = make_server(Auth::Password {
             vault_key: "secret123".into(),
         });
-        let (cmd, args) = build_ssh_args(&server);
+        let (cmd, args, pw) = build_ssh_args(&server);
         assert_eq!(cmd, "sshpass");
-        assert_eq!(args[1], "-p");
-        assert_eq!(args[2], "secret123");
+        assert_eq!(args[0], "ssh");
+        assert!(args.contains(&"root@example.com".to_string()));
+        assert_eq!(pw, Some("secret123".into()));
+        // Password must NOT appear in args
+        assert!(!args.contains(&"secret123".to_string()));
     }
 
     #[test]
@@ -96,7 +122,7 @@ mod tests {
             passphrase: None,
         });
         server.agent_forwarding = true;
-        let (_, args) = build_ssh_args(&server);
+        let (_, args, _) = build_ssh_args(&server);
         assert!(args.contains(&"-A".to_string()));
     }
 
@@ -107,7 +133,7 @@ mod tests {
             passphrase: None,
         });
         server.proxy_jump = Some("user@bastion.example.com".into());
-        let (_, args) = build_ssh_args(&server);
+        let (_, args, _) = build_ssh_args(&server);
         assert!(args.contains(&"-J".to_string()));
     }
 
@@ -118,7 +144,7 @@ mod tests {
             passphrase: None,
         });
         server.proxy_jump = Some("".into());
-        let (_, args) = build_ssh_args(&server);
+        let (_, args, _) = build_ssh_args(&server);
         assert!(!args.contains(&"-J".to_string()));
     }
 }

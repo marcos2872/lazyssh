@@ -45,12 +45,12 @@ fn leave_tui() -> Result<()> {
     Ok(())
 }
 
-fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
+fn native_shell_command(server: &config::Server) -> (String, Vec<String>, Option<String>) {
     crate::ssh::args::build_ssh_args(server)
 }
 
 fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
-    let (command, args) = native_shell_command(server);
+    let (command, args, password) = native_shell_command(server);
 
     leave_tui()?;
 
@@ -59,8 +59,13 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
     let _ = std::io::stdout().write_all(b"\x1bc");
     let _ = std::io::stdout().flush();
 
-    let status = Command::new(&command)
-        .args(args)
+    let mut cmd = Command::new(&command);
+    cmd.args(&args);
+    if let Some(ref pw) = password {
+        cmd.env("SSHPASS", pw);
+    }
+
+    let status = cmd
         .status()
         .with_context(|| format!("failed to start `{}`", command))?;
 
@@ -1275,7 +1280,7 @@ mod tests {
 
 
         };
-        let (cmd, args) = native_shell_command(&server);
+        let (cmd, args, _pw) = native_shell_command(&server);
         assert_eq!(cmd, "ssh");
         assert!(args.contains(&"-i".to_string()));
         assert!(args.contains(&"root@example.com".to_string()));
@@ -1301,13 +1306,13 @@ mod tests {
 
 
         };
-        let (cmd, args) = native_shell_command(&server);
+        let (cmd, args, pw) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
-        assert_eq!(args[0], "sshpass");
-        assert_eq!(args[1], "-p");
-        assert_eq!(args[2], "secret123");
-        assert_eq!(args[3], "ssh");
+        assert_eq!(args[0], "ssh");
         assert!(args.contains(&"root@example.com".to_string()));
+        assert_eq!(pw, Some("secret123".into()));
+        // Password must NOT appear in args
+        assert!(!args.contains(&"secret123".to_string()));
     }
 
     #[test]
@@ -1330,11 +1335,11 @@ mod tests {
 
 
         };
-        let (cmd, args) = native_shell_command(&server);
+        let (cmd, args, pw) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
-        assert!(args.contains(&"-p".to_string()));
         assert!(args.contains(&"2222".to_string()));
         assert!(args.contains(&"admin@example.com".to_string()));
+        assert_eq!(pw, Some("pass".into()));
     }
 
     // --- T3.3: agent_forwarding ---
@@ -1360,7 +1365,7 @@ mod tests {
 
 
         };
-        let (_, args) = native_shell_command(&server);
+        let (_, args, _) = native_shell_command(&server);
         assert!(args.contains(&"-A".to_string()), "should contain -A flag");
     }
 
@@ -1385,7 +1390,7 @@ mod tests {
 
 
         };
-        let (_, args) = native_shell_command(&server);
+        let (_, args, _) = native_shell_command(&server);
         assert!(!args.contains(&"-A".to_string()), "should NOT contain -A");
     }
 
@@ -1412,7 +1417,7 @@ mod tests {
 
 
         };
-        let (_, args) = native_shell_command(&server);
+        let (_, args, _) = native_shell_command(&server);
         assert!(args.contains(&"-J".to_string()), "should contain -J flag");
         assert!(args.contains(&"user@bastion.example.com".to_string()), "should contain jump host");
     }
@@ -1438,7 +1443,7 @@ mod tests {
 
 
         };
-        let (_, args) = native_shell_command(&server);
+        let (_, args, _) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "should NOT contain -J");
     }
 
@@ -1463,7 +1468,7 @@ mod tests {
 
 
         };
-        let (_, args) = native_shell_command(&server);
+        let (_, args, _) = native_shell_command(&server);
         assert!(!args.contains(&"-J".to_string()), "empty proxy_jump should be ignored");
     }
 }
