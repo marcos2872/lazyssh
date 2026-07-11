@@ -232,6 +232,11 @@ pub enum CurrentView {
     SftpBrowser,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Overlay {
+    Help,
+}
+
 pub enum SftpOpResult {
     ListDir(Vec<crate::sftp::FileInfo>),
     Upload(String),
@@ -260,7 +265,7 @@ pub struct App {
     pub sftp_service: std::sync::Arc<std::sync::Mutex<SftpService>>,
     pub sftp_progress_rx: Option<mpsc::UnboundedReceiver<u64>>,
     pub sftp_op_rx: Option<mpsc::UnboundedReceiver<SftpOpResult>>,
-    pub help_visible: bool,
+    pub overlay: Option<Overlay>,
     pub confirm_state: Option<ConfirmState>,
     pub start_time: std::time::Instant,
     pub sort_by: Option<String>,
@@ -290,7 +295,7 @@ impl App {
             ssh_service: SshService::new(),
             sftp_service: std::sync::Arc::new(std::sync::Mutex::new(SftpService::new())),
             sftp_progress_rx: None,
-            help_visible: false,
+            overlay: None,
             confirm_state: None,
             start_time: std::time::Instant::now(),
             sort_by: None,

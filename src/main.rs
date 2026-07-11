@@ -386,7 +386,7 @@ async fn main() -> Result<()> {
             }
 
             // Renderizar modal de ajuda por cima de tudo
-            if app.help_visible {
+            if app.overlay == Some(tui::app::Overlay::Help) {
                 tui::render_help_modal(f, &app.current_view);
             }
         })?;
@@ -398,10 +398,10 @@ async fn main() -> Result<()> {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
                         // Help modal intercepts all keys when visible
-                        if app.help_visible {
+                        if app.overlay == Some(tui::app::Overlay::Help) {
                             match key.code {
                                 KeyCode::Esc | KeyCode::Char('?') => {
-                                    app.help_visible = false;
+                                    app.overlay = None;
                                 }
                                 _ => {}
                             }
@@ -412,7 +412,7 @@ async fn main() -> Result<()> {
                         if key.code == KeyCode::Char('?')
                             && !matches!(app.input_mode, tui::app::InputMode::Insert | tui::app::InputMode::Edit)
                         {
-                            app.help_visible = true;
+                            app.overlay = Some(tui::app::Overlay::Help);
                             continue;
                         }
 
@@ -913,7 +913,7 @@ async fn main() -> Result<()> {
                                     // Upload arquivo(s) selecionado(s)
                                     let mut upload_data: Option<(Vec<(String, String, String)>, Option<String>)> = None;
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else {
                                             let files: Vec<(String, u64)> = match sftp.focus_side {
@@ -1007,7 +1007,7 @@ async fn main() -> Result<()> {
                                     // Download arquivo(s) selecionado(s)
                                     let mut download_data: Option<(Vec<(String, String, String)>, Option<String>)> = None;
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else {
                                             let files: Vec<(String, u64)> = match sftp.focus_side {
@@ -1137,7 +1137,7 @@ async fn main() -> Result<()> {
                                 KeyCode::Char('M') => {
                                     // Create directory
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else {
                                             sftp.input_mode = tui::sftp_browser::SftpInputMode::Mkdir;
@@ -1149,7 +1149,7 @@ async fn main() -> Result<()> {
                                 KeyCode::Char('R') => {
                                     // Rename file/directory
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
                                             if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {
@@ -1163,7 +1163,7 @@ async fn main() -> Result<()> {
                                 KeyCode::Char('x') => {
                                     // Remove file/directory
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
                                             let sid = sftp.session_id.clone();
@@ -1196,7 +1196,7 @@ async fn main() -> Result<()> {
                                 KeyCode::Char('m') => {
                                     // Chmod - change permissions
                                     if let Some(sftp) = &mut app.sftp_state {
-                                        if sftp.is_transferring {
+                                        if matches!(sftp.transfer_state, tui::sftp_browser::TransferState::Transferring { .. }) {
                                             app.notifications.warning("Transferência em andamento!");
                                         } else if sftp.focus_side == tui::sftp_browser::Side::Remote {
                                             if let Some(file) = sftp.remote_files.get(sftp.remote_selected) {

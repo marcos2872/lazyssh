@@ -96,7 +96,7 @@ fn test_sftp_state_new() {
     assert_eq!(state.focus_side, lazyssh::tui::sftp_browser::Side::Local);
     assert_eq!(state.status, "Conectando...");
     assert!(state.remote_files.is_empty());
-    assert!(!state.is_transferring);
+    assert!(!matches!(state.transfer_state, lazyssh::tui::sftp_browser::TransferState::Transferring { .. }));
 }
 
 #[test]
@@ -379,14 +379,14 @@ fn test_sftp_state_get_selected_files() {
 fn test_sftp_state_transfer_lifecycle() {
     let mut state = SftpState::new(test_server());
     state.start_transfer("file.bin".into(), 1000, true);
-    assert!(state.is_transferring);
+    assert!(matches!(state.transfer_state, lazyssh::tui::sftp_browser::TransferState::Transferring { .. }));
     assert_eq!(
         state.transfer_progress.as_ref().unwrap().percentage(),
         0
     );
 
     state.update_transfer_progress(500);
-    assert!(state.is_transferring);
+    assert!(matches!(state.transfer_state, lazyssh::tui::sftp_browser::TransferState::Transferring { .. }));
     assert_eq!(
         state.transfer_progress.as_ref().unwrap().percentage(),
         50
@@ -394,8 +394,8 @@ fn test_sftp_state_transfer_lifecycle() {
 
     state.update_transfer_progress(1000);
     assert!(
-        !state.is_transferring,
-        "complete transfer should clear is_transferring"
+        matches!(state.transfer_state, lazyssh::tui::sftp_browser::TransferState::Idle),
+        "complete transfer should set state to Idle"
     );
 
     state.finish_transfer();

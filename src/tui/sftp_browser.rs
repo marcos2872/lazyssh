@@ -60,6 +60,17 @@ pub enum SftpInputMode {
     Bookmark,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransferState {
+    Idle,
+    Transferring {
+        file_name: String,
+        bytes_total: u64,
+        is_upload: bool,
+        start_time: Instant,
+    },
+}
+
 #[derive(Debug)]
 pub struct SftpState {
     pub local: LocalFs,
@@ -73,7 +84,7 @@ pub struct SftpState {
     pub focus_side: Side,
     pub status: String,
     pub transfer_progress: Option<TransferProgress>,
-    pub is_transferring: bool,
+    pub transfer_state: TransferState,
     pub session_id: Option<String>,
     pub input_mode: SftpInputMode,
     pub input_buffer: String,
@@ -105,7 +116,7 @@ impl SftpState {
             focus_side: Side::Local,
             status: "Conectando...".to_string(),
             transfer_progress: None,
-            is_transferring: false,
+            transfer_state: TransferState::Idle,
             session_id: None,
             input_mode: SftpInputMode::None,
             input_buffer: String::new(),
@@ -278,14 +289,20 @@ impl SftpState {
     }
 
     pub fn start_transfer(&mut self, file_name: String, total_bytes: u64, is_upload: bool) {
-        self.is_transferring = true;
-        self.transfer_start = Some(Instant::now());
+        let start_time = Instant::now();
+        self.transfer_state = TransferState::Transferring {
+            file_name: file_name.clone(),
+            bytes_total: total_bytes,
+            is_upload,
+            start_time,
+        };
+        self.transfer_start = Some(start_time);
         self.transfer_progress = Some(TransferProgress {
             file_name,
             bytes_done: 0,
             bytes_total: total_bytes,
             is_upload,
-            start_time: Instant::now(),
+            start_time,
         });
     }
 
@@ -293,13 +310,13 @@ impl SftpState {
         if let Some(progress) = &mut self.transfer_progress {
             progress.bytes_done = bytes_done;
             if progress.is_complete() {
-                self.is_transferring = false;
+                self.transfer_state = TransferState::Idle;
             }
         }
     }
 
     pub fn finish_transfer(&mut self) {
-        self.is_transferring = false;
+        self.transfer_state = TransferState::Idle;
         self.transfer_progress = None;
         self.local_selected_files.clear();
         self.remote_selected_files.clear();
@@ -476,7 +493,7 @@ fn render_remote_pane(f: &mut Frame, state: &SftpState, area: ratatui::layout::R
 
 fn render_sftp_help(f: &mut Frame, state: &SftpState, area: ratatui::layout::Rect) {
     // Mostrar mensagem de transferência se ativo
-    if state.is_transferring {
+    if matches!(state.transfer_state, TransferState::Transferring { .. }) {
         let elapsed = state.transfer_start
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
