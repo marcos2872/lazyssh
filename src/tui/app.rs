@@ -238,14 +238,7 @@ pub enum Overlay {
 }
 
 pub enum SftpOpResult {
-    ListDir(Vec<crate::sftp::FileInfo>),
     Upload(String),
-    Download(String),
-    Mkdir,
-    Unlink(String),
-    Rmdir(String),
-    Rename(String),
-    SetPermissions,
     Error(String),
 }
 
@@ -516,18 +509,6 @@ impl App {
         })
     }
 
-    /// Upload a file via SFTP service.
-    pub fn sftp_upload_file(&self, session_id: &str, local: &str, remote: &str) -> Result<(), String> {
-        let svc = self.sftp_service.lock().unwrap();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let session = svc.get_session(session_id)
-                    .ok_or_else(|| "SFTP session not found".to_string())?;
-                session.upload(local, remote, None).await.map_err(|e| e.to_string())
-            })
-        })
-    }
-
     /// Upload a file via SCP (no ~1GB SFTP limit).
     pub fn sftp_upload_with_scp(&self, server: &crate::config::models::Server, local: &str, remote: &str) -> Result<(), String> {
         let mut args = vec![];
@@ -570,18 +551,6 @@ impl App {
         } else {
             Err(format!("SCP falhou com código {}", status.code().unwrap_or(-1)))
         }
-    }
-
-    /// Download a file via SFTP service.
-    pub fn sftp_download_file(&self, session_id: &str, remote: &str, local: &str) -> Result<(), String> {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let svc = self.sftp_service.lock().unwrap(); let session = svc
-                    .get_session(session_id)
-                    .ok_or_else(|| "SFTP session not found".to_string())?;
-                session.download(remote, local).await.map_err(|e| e.to_string())
-            })
-        })
     }
 
     /// Create a directory via SFTP.
@@ -657,10 +626,6 @@ impl App {
         }
         self.current_view = CurrentView::ServerList;
         self.sftp_state = None;
-    }
-
-    pub fn connect_ssh(&mut self) {
-        // Not used — SSH opens in external shell via native_shell_handoff
     }
 
 }

@@ -7,7 +7,7 @@ pub mod vault;
 use anyhow::{Context, Result};
 use crossterm::{
     cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -69,37 +69,6 @@ fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
     Ok(status)
 }
 
-// Helper: convert crossterm key events to byte sequences for the remote PTY
-#[allow(dead_code)]
-fn key_event_to_bytes(ev: &KeyEvent) -> Vec<u8> {
-    let mods = ev.modifiers;
-    match ev.code {
-        KeyCode::Char(c) => {
-            if mods.contains(KeyModifiers::CONTROL) && c.is_ascii_alphabetic() {
-                return vec![(c.to_ascii_lowercase() as u8) - b'a' + 1];
-            }
-            if mods.contains(KeyModifiers::ALT) {
-                let mut bytes = vec![0x1b];
-                bytes.extend_from_slice(c.encode_utf8(&mut [0u8; 4]).as_bytes());
-                return bytes;
-            }
-            c.to_string().into_bytes()
-        }
-        KeyCode::Enter => b"\r".to_vec(),
-        KeyCode::Backspace => b"\x7f".to_vec(),
-        KeyCode::Tab => b"\t".to_vec(),
-        KeyCode::Esc => b"\x1b".to_vec(),
-        KeyCode::Delete => b"\x1b[3~".to_vec(),
-        KeyCode::Up => b"\x1b[A".to_vec(),
-        KeyCode::Down => b"\x1b[B".to_vec(),
-        KeyCode::Left => b"\x1b[D".to_vec(),
-        KeyCode::Right => b"\x1b[C".to_vec(),
-        KeyCode::Home => b"\x1b[H".to_vec(),
-        KeyCode::End => b"\x1b[F".to_vec(),
-        _ => vec![],
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     enable_raw_mode()?;
@@ -148,7 +117,6 @@ async fn main() -> Result<()> {
                             app.notifications.error(&msg);
                         }
                     }
-                    Ok(_) => {}
                     Err(TryRecvError::Disconnected) => {
                         done = true;
                         break;
@@ -1343,81 +1311,6 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    #[test]
-    fn test_key_event_regular_char() {
-        let ev = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"a");
-    }
-
-    #[test]
-    fn test_key_event_ctrl_c() {
-        let ev = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        assert_eq!(key_event_to_bytes(&ev), &[3]);
-    }
-
-    #[test]
-    fn test_key_event_ctrl_d() {
-        let ev = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
-        assert_eq!(key_event_to_bytes(&ev), &[4]);
-    }
-
-    #[test]
-    fn test_key_event_alt_char() {
-        let ev = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
-        assert_eq!(key_event_to_bytes(&ev), &[0x1b, b'x']);
-    }
-
-    #[test]
-    fn test_key_event_enter() {
-        let ev = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"\r");
-    }
-
-    #[test]
-    fn test_key_event_backspace() {
-        let ev = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"\x7f");
-    }
-
-    #[test]
-    fn test_key_event_tab() {
-        let ev = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"\t");
-    }
-
-    #[test]
-    fn test_key_event_esc() {
-        let ev = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"\x1b");
-    }
-
-    #[test]
-    fn test_key_event_delete() {
-        let ev = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
-        assert_eq!(key_event_to_bytes(&ev), b"\x1b[3~");
-    }
-
-    #[test]
-    fn test_key_event_arrows() {
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)), b"\x1b[A");
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)), b"\x1b[B");
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)), b"\x1b[D");
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)), b"\x1b[C");
-    }
-
-    #[test]
-    fn test_key_event_home_end() {
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)), b"\x1b[H");
-        assert_eq!(key_event_to_bytes(&KeyEvent::new(KeyCode::End, KeyModifiers::NONE)), b"\x1b[F");
-    }
-
-    #[test]
-    fn test_key_event_unmapped_returns_empty() {
-        let ev = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
-        assert!(key_event_to_bytes(&ev).is_empty());
-    }
 
     #[test]
     fn test_native_shell_command_key_auth() {
