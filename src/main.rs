@@ -20,7 +20,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use tui::{render_notifications, render_server_list, render_sftp_browser, App, SftpOpResult, Theme};
+use tui::{render_notifications, render_server_list, render_sftp_browser, App, SftpOpResult};
 
 struct CleanupGuard;
 
@@ -163,144 +163,7 @@ async fn main() -> Result<()> {
                     }
 
                     if let Some(ref form) = app.form_state {
-                        let area = f.area();
-                        let is_key = form.is_key_auth();
-                        let is_insert = matches!(form.mode, tui::app::FormMode::Insert);
-                        let height: u16 = if is_key { 16 } else { 14 };
-                        let width: u16 = 50;
-                        let x = (area.width - width) / 2;
-                        let y = (area.height - height) / 2;
-                        let rect = ratatui::layout::Rect::new(x, y, width, height);
-
-                        let mut lines = vec![];
-
-                        // Título estilizado
-                        let title = if is_insert { "  ➕ Novo Servidor  " } else { "  ✏️ Editar Servidor  " };
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(title,
-                                ratatui::style::Style::default().fg(Theme::accent()).add_modifier(ratatui::style::Modifier::BOLD)),
-                        ]));
-                        lines.push(ratatui::text::Line::from("─".repeat(width as usize - 2)));
-
-                        // Campos fixos
-                        let base_fields = [
-                            (tui::app::FormField::Name, "📝 Nome", &form.name),
-                            (tui::app::FormField::Host, "🌐 Host", &form.host),
-                            (tui::app::FormField::Port, "🔌 Porta", &form.port),
-                            (tui::app::FormField::User, "👤 Usuário", &form.user),
-                        ];
-
-                        for (field_type, label, value) in &base_fields {
-                            let is_active = &form.field == field_type;
-                            let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled(format!("{}: ", label), ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(*value, style),
-                            ]));
-                        }
-
-                        // Auth type as toggle
-                        {
-                            let is_active = form.field == tui::app::FormField::AuthType;
-                            let marker = if is_active { "▶" } else { " " };
-                            let auth_label = if is_key { "key" } else { "password" };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            let mut spans = vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled("🔐 Auth: ", ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(format!("[{}]", auth_label), style),
-                            ];
-                            if is_active {
-                                spans.push(ratatui::text::Span::styled(" ← →", ratatui::style::Style::default().fg(Theme::text_dim())));
-                            }
-                            lines.push(ratatui::text::Line::from(spans));
-                        }
-
-                        // Campos dinâmicos baseado no auth type
-                        if is_key {
-                            let is_active = form.field == tui::app::FormField::KeyPath;
-                            let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled("🔑 Chave: ", ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(&form.key_path, style),
-                            ]));
-
-                            let is_active = form.field == tui::app::FormField::Passphrase;
-                            let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(&form.passphrase, style),
-                            ]));
-                        } else {
-                            let is_active = form.field == tui::app::FormField::Password;
-                            let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled("🔑 Senha: ", ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(&form.password, style),
-                            ]));
-                        }
-
-                        // Tags
-                        {
-                            let is_active = form.field == tui::app::FormField::Tags;
-                            let marker = if is_active { "▶" } else { " " };
-                            let style = if is_active {
-                                ratatui::style::Style::default().fg(Theme::primary()).add_modifier(ratatui::style::Modifier::BOLD)
-                            } else {
-                                ratatui::style::Style::default().fg(Theme::text())
-                            };
-                            let tags_display = if form.tags.is_empty() { " (nenhuma)" } else { &form.tags };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(format!("{} ", marker), ratatui::style::Style::default().fg(Theme::accent())),
-                                ratatui::text::Span::styled("🏷️ Tags: ", ratatui::style::Style::default().fg(Theme::secondary())),
-                                ratatui::text::Span::styled(tags_display, style),
-                            ]));
-                        }
-
-                        lines.push(ratatui::text::Line::from(""));
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled("  ↑/↓/Tab: próximo campo  ", ratatui::style::Style::default().fg(Theme::text_dim())),
-                            ratatui::text::Span::styled("│  Esc: cancelar", ratatui::style::Style::default().fg(Theme::error())),
-                        ]));
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled("  Enter: salvar (no último campo)  ", ratatui::style::Style::default().fg(Theme::success())),
-                        ]));
-
-                        let block = ratatui::widgets::Block::default()
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .border_style(Theme::modal_border_style())
-                            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black));
-
-                        let input = ratatui::widgets::Paragraph::new(lines).block(block);
-                        f.render_widget(input, rect);
+                        tui::modals::render_form_modal(f, form);
                     }
                 }
                 tui::app::CurrentView::SftpBrowser => {
@@ -319,43 +182,7 @@ async fn main() -> Result<()> {
 
             // Renderizar modal de confirmação
             if let Some(ref confirm) = app.confirm_state {
-                let area = f.area();
-                let width = 45u16;
-                let height = 5u16;
-                let x = (area.width - width) / 2;
-                let y = (area.height - height) / 2;
-                let rect = ratatui::layout::Rect::new(x, y, width, height);
-
-                let msg = match &confirm.action {
-                    tui::app::ConfirmAction::DeleteServer { name } => {
-                        format!("Remover servidor '{}'?", name)
-                    }
-                };
-
-                let lines = vec![
-                    ratatui::text::Line::from(""),
-                    ratatui::text::Line::from(vec![
-                        ratatui::text::Span::styled(
-                            format!("  {}  ", msg),
-                            ratatui::style::Style::default().fg(Theme::text()).add_modifier(ratatui::style::Modifier::BOLD),
-                        ),
-                    ]),
-                    ratatui::text::Line::from(""),
-                    ratatui::text::Line::from(vec![
-                        ratatui::text::Span::styled("  Enter:Confirmar  ", ratatui::style::Style::default().fg(Theme::success())),
-                        ratatui::text::Span::styled("│  Esc:Cancelar", ratatui::style::Style::default().fg(Theme::error())),
-                    ]),
-                ];
-
-                let block = ratatui::widgets::Block::default()
-                    .borders(ratatui::widgets::Borders::ALL)
-                    .title(" ⚠ Confirmação ")
-                    .title_style(Theme::modal_title_style())
-                    .border_style(Theme::modal_border_style())
-                    .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black));
-
-                f.render_widget(ratatui::widgets::Clear, rect);
-                f.render_widget(ratatui::widgets::Paragraph::new(lines).block(block), rect);
+                tui::modals::render_confirm_modal(f, confirm);
             }
 
             // Renderizar modal de ajuda por cima de tudo
