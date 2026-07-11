@@ -25,25 +25,33 @@ impl Handler for SshClient {
     }
 }
 
-/// Represents the state of an SSH session.
+/// Estado de uma sessão SSH.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionStatus {
+    /// Conectando ao servidor.
     Connecting,
+    /// Conectado e autenticado.
     Connected,
+    /// Desconectado.
     Disconnected,
+    /// Erro durante conexão ou operação.
     Error(String),
 }
 
-/// A single SSH session with PTY support.
+/// Uma sessão SSH individual com suporte a PTY.
 pub struct SshSession {
+    /// ID único da sessão (UUID).
     pub id: String,
+    /// Configuração do servidor associado.
     pub server: Server,
+    /// Estado atual da conexão.
     pub status: SessionStatus,
+    /// Handle russh para a conexão SSH.
     handle: Option<client::Handle<SshClient>>,
 }
 
 impl SshSession {
-    /// Create a new session (not yet connected).
+    /// Cria uma nova sessão (ainda não conectada).
     pub fn new(server: Server) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -53,7 +61,7 @@ impl SshSession {
         }
     }
 
-    /// Connect to the remote server using the configured authentication.
+    /// Conecta ao servidor remoto usando o método de autenticação configurado.
     pub async fn connect(&mut self) -> Result<()> {
         let config = client::Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(30)),
@@ -218,27 +226,33 @@ impl SshSession {
         Ok(())
     }
 
+    /// Retorna `true` se a sessão está conectada.
     pub fn is_connected(&self) -> bool {
         matches!(self.status, SessionStatus::Connected)
     }
 }
 
-/// Events from an interactive shell channel.
+/// Eventos de um canal de shell interativo.
 #[derive(Debug)]
 pub enum ShellEvent {
+    /// Shell encerrou com o código de saída informado.
     Exited(u32),
+    /// Conexão do shell fechada.
     Closed,
 }
 
-/// Handle to an interactive shell channel.
+/// Handle para um canal de shell interativo SSH.
 pub struct ShellChannel {
+    /// Escritor para enviar dados ao shell remoto.
     pub writer: Arc<Mutex<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>,
+    /// Receptor de dados de saída do shell.
     pub data_rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
+    /// Receptor de eventos do shell (exit, close).
     event_rx: Arc<Mutex<mpsc::Receiver<ShellEvent>>>,
 }
 
 impl ShellChannel {
-    /// Send user input to the remote shell.
+    /// Envia entrada do usuário para o shell remoto.
     pub async fn send_input(&self, data: &[u8]) -> Result<()> {
         use tokio::io::AsyncWriteExt;
         let mut writer = self.writer.lock().await;
@@ -247,18 +261,20 @@ impl ShellChannel {
         Ok(())
     }
 
-    /// Check for shell events (exit, close).
+    /// Verifica se há eventos do shell (exit, close).
     pub async fn next_event(&self) -> Option<ShellEvent> {
         self.event_rx.lock().await.recv().await
     }
 }
 
-/// Manages multiple SSH sessions.
+/// Serviço gerenciador de múltiplas sessões SSH.
 pub struct SshService {
+    /// Mapa de sessões ativas, indexadas por ID.
     sessions: HashMap<String, SshSession>,
 }
 
 impl SshService {
+    /// Cria um novo serviço SSH vazio.
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),

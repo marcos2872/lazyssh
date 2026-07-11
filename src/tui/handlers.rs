@@ -11,14 +11,17 @@ use super::app::{
 use super::sftp_browser::{SftpInputMode, Side, TransferState};
 use super::ssh_terminal;
 
-/// Result of handling a key event.
+/// Resultado do manipulação de um evento de tecla.
 pub enum HandlerResult {
+    /// Nenhuma ação especial — continuar o loop.
     None,
+    /// Solicita encerramento da aplicação.
     Quit,
+    /// Solicita abertura de conexão SSH com o servidor informado.
     ConnectSsh(config::models::Server),
 }
 
-/// Handle keys when help modal is open. Returns true if key was consumed.
+/// Manipula teclas quando o modal de ajuda está aberto. Retorna `true` se a tecla foi consumida.
 pub fn handle_help_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
     if app.overlay == Some(Overlay::Help) {
         match key.code {
@@ -32,7 +35,7 @@ pub fn handle_help_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
     false
 }
 
-/// Global ? handler — open help from any view. Returns true if handled.
+/// Tecla global `?` — abre ajuda de qualquer visão. Retorna `true` se tratada.
 pub fn handle_global_keys(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
     if key.code == KeyCode::Char('?')
         && !matches!(app.input_mode, InputMode::Insert | InputMode::Edit)
@@ -43,7 +46,7 @@ pub fn handle_global_keys(app: &mut App, key: crossterm::event::KeyEvent) -> boo
     false
 }
 
-/// Handle ServerList keys. Returns HandlerResult.
+/// Manipula teclas da lista de servidores. Retorna `HandlerResult`.
 pub fn handle_server_list_key(app: &mut App, key: crossterm::event::KeyEvent) -> HandlerResult {
     match app.input_mode {
         InputMode::Normal => match key.code {
@@ -281,7 +284,7 @@ pub fn handle_server_list_key(app: &mut App, key: crossterm::event::KeyEvent) ->
     HandlerResult::None
 }
 
-/// Handle SFTP keys. Returns HandlerResult.
+/// Manipula teclas do navegador SFTP. Retorna `HandlerResult`.
 pub fn handle_sftp_key(app: &mut App, key: crossterm::event::KeyEvent) -> HandlerResult {
     // Handle SFTP input modes (mkdir/rename/chmod/bookmark)
     if let Some(sftp) = &app.sftp_state {
@@ -798,7 +801,7 @@ pub fn handle_sftp_key(app: &mut App, key: crossterm::event::KeyEvent) -> Handle
     HandlerResult::None
 }
 
-/// Handle mouse events. Returns HandlerResult.
+/// Manipula eventos de mouse (scroll, cliques). Retorna `HandlerResult`.
 pub fn handle_mouse_event(app: &mut App, mouse: crossterm::event::MouseEvent) -> HandlerResult {
     match mouse.kind {
         crossterm::event::MouseEventKind::ScrollUp => {

@@ -8,6 +8,7 @@ use super::effects::AppEffects;
 use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
 
+/// Campos do formulário de adição/edição de servidor.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FormField {
     Name,
@@ -21,15 +22,21 @@ pub enum FormField {
     Tags,
 }
 
+/// Discriminador de se o formulário está criando ou editando um servidor.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FormMode {
+    /// Criando um novo servidor.
     Insert,
+    /// Editando um servidor existente no índice informado.
     Edit { server_index: usize },
 }
 
+/// Estado do formulário de adição/edição de servidor, usado nos modos Insert e Edit.
 #[derive(Debug, Clone)]
 pub struct FormState {
+    /// Campo atualmente focado no formulário.
     pub field: FormField,
+    /// Se esta é uma operação de inserção ou edição.
     pub mode: FormMode,
     pub name: String,
     pub host: String,
@@ -43,6 +50,7 @@ pub struct FormState {
 }
 
 impl FormState {
+    /// Cria um novo formulário para inserção de servidor com valores padrão.
     pub fn new_insert() -> Self {
         Self {
             field: FormField::Name,
@@ -59,6 +67,7 @@ impl FormState {
         }
     }
 
+    /// Cria um formulário pré-preenchido com dados de um servidor existente para edição.
     pub fn new_edit(server: &Server, index: usize) -> Self {
         let (auth_type, key_path, passphrase) = match &server.auth {
             Auth::Key { path, passphrase } => (
@@ -83,6 +92,7 @@ impl FormState {
         }
     }
 
+    /// Retorna o índice do servidor se estiver no modo Edit, `None` se Insert.
     pub fn server_index(&self) -> Option<usize> {
         match self.mode {
             FormMode::Edit { server_index } => Some(server_index),
@@ -90,10 +100,12 @@ impl FormState {
         }
     }
 
+    /// Retorna `true` se o tipo de autenticação atual é "key".
     pub fn is_key_auth(&self) -> bool {
         self.auth_type == "key"
     }
 
+    /// Retorna uma referência ao valor do campo atualmente focado.
     pub fn current_value(&self) -> &str {
         match self.field {
             FormField::Name => &self.name,
@@ -108,6 +120,7 @@ impl FormState {
         }
     }
 
+    /// Retorna uma referência mutável ao valor do campo atualmente focado.
     pub fn current_value_mut(&mut self) -> &mut String {
         match self.field {
             FormField::Name => &mut self.name,
@@ -122,6 +135,7 @@ impl FormState {
         }
     }
 
+    /// Move o foco para o próximo campo no formulário (retorna ao início ao final).
     pub fn next_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
@@ -149,6 +163,7 @@ impl FormState {
         };
     }
 
+    /// Move o foco para o campo anterior no formulário (retorna ao fim ao início).
     pub fn prev_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
@@ -176,6 +191,7 @@ impl FormState {
         };
     }
 
+    /// Constrói um valor `Auth` a partir dos campos atuais do formulário.
     pub fn build_auth(&self) -> Auth {
         if self.auth_type == "password" {
             Auth::Password {
@@ -206,61 +222,101 @@ impl FormState {
     }
 }
 
+/// Ação que requer confirmação do usuário antes de executar.
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
+    /// Remover um servidor pelo nome.
     DeleteServer { name: String },
 }
 
+/// Estado de uma ação pendente de confirmação.
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
+    /// A ação que está aguardando confirmação.
     pub action: ConfirmAction,
 }
 
+/// Modo de entrada atual da interface — controla como as teclas são interpretadas.
 #[derive(Debug, PartialEq)]
 pub enum InputMode {
+    /// Navegação normal na lista de servidores.
     Normal,
+    /// Campo de busca ativo.
     Search,
+    /// Formulário de inserção de novo servidor.
     Insert,
+    /// Formulário de edição de servidor existente.
     Edit,
+    /// Modal de confirmação de exclusão.
     Confirm,
 }
 
+/// Visão/tela atualmente ativa na interface.
 #[derive(Debug, PartialEq)]
 pub enum CurrentView {
+    /// Lista de servidores com busca e ordenação.
     ServerList,
+    /// Terminal SSH (usa shell externo, sem renderização TUI).
     SshTerminal,
+    /// Navegador de arquivos SFTP dual-pane (local/remoto).
     SftpBrowser,
 }
 
+/// Sobreposição visual atual (modal aberta sobre o conteúdo principal).
 #[derive(Debug, PartialEq)]
 pub enum Overlay {
+    /// Modal de ajuda com atalhos de teclado.
     Help,
 }
 
+/// Resultado de uma operação assíncrona SFTP recebida pelo loop principal.
 pub enum SftpOpResult {
+    /// Upload concluído com sucesso — contém o nome do arquivo.
     Upload(String),
+    /// Erro durante operação — contém a mensagem de erro ou `__done__` para sinalizar conclusão.
     Error(String),
 }
 
+/// Estado principal da aplicação — contém todos os dados e serviços necessários
+/// para o loop de eventos da interface.
 pub struct App {
+    /// Todos os servidores configurados.
     pub servers: Vec<Server>,
+    /// Índices dos servidores visíveis após aplicar filtro de busca.
     pub filtered_indices: Vec<usize>,
+    /// Índice do servidor selecionado na lista filtrada.
     pub selected: usize,
+    /// Tela/visão atualmente ativa.
     pub current_view: CurrentView,
+    /// Modo de entrada atual (controla interpretação de teclas).
     pub input_mode: InputMode,
+    /// Conteúdo do campo de busca.
     pub input: String,
+    /// Sinaliza que a aplicação deve encerrar o loop principal.
     pub should_quit: bool,
+    /// Estado do navegador SFTP (presente apenas quando SFTP está ativo).
     pub sftp_state: Option<SftpState>,
+    /// Estado do formulário de adição/edição (presente quando modal está aberta).
     pub form_state: Option<FormState>,
+    /// Fila de notificações exibidas na barra inferior.
     pub notifications: NotificationQueue,
+    /// Gerenciador de efeitos visuais (transições de modal).
     pub effects: AppEffects,
+    /// Serviço de conexões SSH (sessões gerenciadas pelo russh).
     pub ssh_service: SshService,
+    /// Serviço de sessões SFTP (compartilhado via Arc<Mutex>).
     pub sftp_service: std::sync::Arc<std::sync::Mutex<SftpService>>,
+    /// Canal para receber progresso de upload em bytes.
     pub sftp_progress_rx: Option<mpsc::UnboundedReceiver<u64>>,
+    /// Canal para receber resultados de operações SFTP assíncronas.
     pub sftp_op_rx: Option<mpsc::UnboundedReceiver<SftpOpResult>>,
+    /// Sobreposição visual ativa (ex: modal de ajuda).
     pub overlay: Option<Overlay>,
+    /// Estado de confirmação de ação destrutiva (ex: exclusão de servidor).
     pub confirm_state: Option<ConfirmState>,
+    /// Instante em que a aplicação foi iniciada (para cálculo de uptime).
     pub start_time: std::time::Instant,
+    /// Modo de ordenação ativo.
     pub sort_by: Option<String>,
 }
 

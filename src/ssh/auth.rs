@@ -5,6 +5,10 @@ use std::sync::Arc;
 
 use crate::config::models::Auth;
 
+/// Carrega uma chave privada SSH do disco para autenticação por chave pública.
+///
+/// Suporta expansão de `~` no caminho da chave e frases secretas opcionais.
+/// Retorna erro se a variante for `Password` ou se o arquivo não puder ser lido.
 pub fn load_key(auth: &Auth) -> Result<PrivateKeyWithHashAlg> {
     match auth {
         Auth::Key { path, passphrase } => {

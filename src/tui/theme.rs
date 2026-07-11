@@ -1,26 +1,40 @@
 use ratatui::style::{Color, Modifier, Style};
 
+/// Tema visual da aplicação — cores e estilos reutilizáveis para todos os widgets TUI.
 pub struct Theme;
 
 impl Theme {
-    // Cores principais
+    // === Cores principais ===
+
+    /// Cor primária (ciano) — usada para títulos e elementos de destaque.
     pub fn primary() -> Color { Color::Cyan }
+    /// Cor secundária (azul) — usada para bordas e labels.
     pub fn secondary() -> Color { Color::Blue }
+    /// Cor de destaque (magenta) — usada para marcadores e bordas modais.
     pub fn accent() -> Color { Color::Magenta }
+    /// Cor de sucesso (verde) — usada para mensagens de sucesso e ações confirmadas.
     pub fn success() -> Color { Color::Green }
+    /// Cor de aviso (amarelo) — usada para servidores fixados e avisos.
     pub fn warning() -> Color { Color::Yellow }
+    /// Cor de erro (vermelho) — usada para erros e cancelamentos.
     pub fn error() -> Color { Color::Red }
+    /// Cor de fundo (cinza escuro).
     pub fn background() -> Color { Color::DarkGray }
+    /// Cor de texto principal (branco).
     pub fn text() -> Color { Color::White }
+    /// Cor de texto secundário/desabilitado (cinza).
     pub fn text_dim() -> Color { Color::Gray }
 
-    // Estilos
+    // === Estilos ===
+
+    /// Estilo para títulos de seção (ciano, negrito).
     pub fn title_style() -> Style {
         Style::default()
             .fg(Self::primary())
             .add_modifier(Modifier::BOLD)
     }
 
+    /// Estilo para item selecionado na lista (fundo ciano, texto preto).
     pub fn selected_style() -> Style {
         Style::default()
             .bg(Self::primary())
@@ -28,33 +42,39 @@ impl Theme {
             .add_modifier(Modifier::BOLD)
     }
 
+    /// Estilo para bordas de widgets (azul).
     pub fn border_style() -> Style {
         Style::default().fg(Self::secondary())
     }
 
+    /// Estilo para bordas de modais (magenta, negrito).
     pub fn modal_border_style() -> Style {
         Style::default()
             .fg(Self::accent())
             .add_modifier(Modifier::BOLD)
     }
 
+    /// Estilo para títulos de modal (magenta, negrito).
     pub fn modal_title_style() -> Style {
         Style::default()
             .fg(Self::accent())
             .add_modifier(Modifier::BOLD)
     }
 
+    /// Estilo para campos de input inativos (texto branco).
     pub fn input_style() -> Style {
         Style::default()
             .fg(Self::text())
     }
 
+    /// Estilo para campos de input ativos (ciano, negrito).
     pub fn input_active_style() -> Style {
         Style::default()
             .fg(Self::primary())
             .add_modifier(Modifier::BOLD)
     }
 
+    /// Estilo para prompts de comando (verde, negrito).
     pub fn prompt_style() -> Style {
         Style::default()
             .fg(Self::success())

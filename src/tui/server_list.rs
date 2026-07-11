@@ -10,6 +10,7 @@ use super::app::App;
 use super::help::render_status_bar;
 use super::theme::Theme;
 
+/// Renderiza a lista de servidores com barra de busca, lista e rodapé de status.
 pub fn render_server_list(f: &mut Frame, app: &App) {
     let area = f.area();
     let chunks = Layout::default()

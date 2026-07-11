@@ -27,25 +27,33 @@ impl Handler for SshClient {
     }
 }
 
-/// Represents the state of an SFTP session.
+/// Estado de uma sessão SFTP.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionStatus {
+    /// Conectando ao servidor.
     Connecting,
+    /// Conectado e autenticado.
     Connected,
+    /// Desconectado.
     Disconnected,
+    /// Erro durante conexão ou operação.
     Error(String),
 }
 
-/// A single SFTP session for file transfer operations.
+/// Uma sessão SFTP individual para operações de transferência de arquivos.
 pub struct SftpServiceSession {
+    /// ID único da sessão (UUID).
     pub id: String,
+    /// Configuração do servidor associado.
     pub server: Server,
+    /// Estado atual da conexão.
     pub status: SessionStatus,
+    /// Sessão SFTP russh (via Arc para compartilhamento seguro).
     sftp: Option<Arc<SftpSession>>,
 }
 
 impl SftpServiceSession {
-    /// Create a new session (not yet connected).
+    /// Cria uma nova sessão (ainda não conectada).
     pub fn new(server: Server) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -55,14 +63,14 @@ impl SftpServiceSession {
         }
     }
 
-    /// Get a clone of the underlying SftpSession (Arc-wrapped, cheap to clone).
+    /// Retorna um clone do SftpSession subjacente (via Arc, clonagem barata).
     pub fn sftp_session(&self) -> Option<Arc<SftpSession>> {
         self.sftp.clone()
     }
 }
 
-/// Upload a file using an Arc<SftpSession> directly (no mutex lock needed).
-/// Reads and writes in chunks to avoid memory and buffer issues with large files.
+/// Envia um arquivo para o servidor SFTP usando um `Arc<SftpSession>` diretamente.
+/// Lê e grava em blocos para evitar problemas de memória com arquivos grandes.
 pub async fn upload_file(session: &SftpSession, local_path: &str, remote_path: &str, progress_tx: Option<tokio::sync::mpsc::UnboundedSender<u64>>) -> Result<()> {
     use russh_sftp::protocol::OpenFlags;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -401,17 +409,20 @@ impl SftpServiceSession {
         Ok(())
     }
 
+    /// Retorna `true` se a sessão está conectada.
     pub fn is_connected(&self) -> bool {
         matches!(self.status, SessionStatus::Connected)
     }
 }
 
-/// Manages multiple SFTP sessions.
+/// Serviço gerenciador de múltiplas sessões SFTP.
 pub struct SftpService {
+    /// Mapa de sessões ativas, indexadas por ID.
     sessions: HashMap<String, SftpServiceSession>,
 }
 
 impl SftpService {
+    /// Cria um novo serviço SFTP vazio.
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),

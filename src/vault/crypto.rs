@@ -5,12 +5,14 @@ use std::num::NonZeroU32;
 
 const ITERATIONS: NonZeroU32 = NonZeroU32::new(100_000).unwrap();
 
+/// Gera um sal criptograficamente aleatório de 16 bytes para derivação de chave.
 pub fn generate_salt() -> [u8; 16] {
     let mut salt = [0u8; 16];
     SystemRandom::new().fill(&mut salt).expect("salt generation");
     salt
 }
 
+/// Deriva uma chave AES de 256 bits a partir de uma senha-mestre usando PBKDF2-HMAC-SHA256.
 pub fn derive_key(master_password: &str, salt: &[u8; 16]) -> [u8; 32] {
     let mut key = [0u8; 32];
     ring::pbkdf2::derive(
@@ -23,6 +25,9 @@ pub fn derive_key(master_password: &str, salt: &[u8; 16]) -> [u8; 32] {
     key
 }
 
+/// Criptografa uma string de senha usando AES-256-GCM com um nonce aleatório.
+///
+/// Retorna nonce + texto cifrado (nonce é prependido para descriptografia).
 pub fn encrypt_password(password: &str, key: &[u8; 32]) -> Result<Vec<u8>> {
     let rng = SystemRandom::new();
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -46,6 +51,9 @@ pub fn encrypt_password(password: &str, key: &[u8; 32]) -> Result<Vec<u8>> {
     Ok(result)
 }
 
+/// Descriptografa texto cifrado AES-256-GCM de volta a uma string de senha.
+///
+/// Espera formato de entrada: nonce (12 bytes) || texto cifrado + tag de autenticação.
 pub fn decrypt_password(encrypted: &[u8], key: &[u8; 32]) -> Result<String> {
     if encrypted.len() < NONCE_LEN {
         return Err(anyhow::anyhow!("Invalid encrypted data"));

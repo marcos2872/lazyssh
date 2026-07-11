@@ -7,6 +7,7 @@ use ratatui::Frame;
 use super::app::{ConfirmAction, ConfirmState, FormField, FormMode, FormState};
 use super::theme::Theme;
 
+/// Renderiza o modal de formulário (inserir/editar servidor) centralizado na tela.
 pub fn render_form_modal(f: &mut Frame, form: &FormState) {
     let area = f.area();
     let is_key = form.is_key_auth();
@@ -143,6 +144,7 @@ pub fn render_form_modal(f: &mut Frame, form: &FormState) {
     f.render_widget(input, rect);
 }
 
+/// Renderiza o modal de confirmação (ex: exclusão de servidor) centralizado na tela.
 pub fn render_confirm_modal(f: &mut Frame, confirm: &ConfirmState) {
     let area = f.area();
     let width = 45u16;

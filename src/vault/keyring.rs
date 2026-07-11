@@ -2,10 +2,12 @@ use crate::config::models::Server;
 
 const SERVICE: &str = "lazyssh";
 
+/// Gera a chave da conta no keyring a partir da identidade do servidor (`user@host:port`).
 fn account_key(server: &Server) -> String {
     format!("{}@{}:{}", server.user, server.host, server.port)
 }
 
+/// Armazena uma senha no keyring do sistema (GNOME Keyring, KDE Wallet, macOS Keychain).
 pub fn store_password(server: &Server, password: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(SERVICE, &account_key(server))
         .map_err(|e| format!("keyring entry: {}", e))?;
@@ -13,6 +15,7 @@ pub fn store_password(server: &Server, password: &str) -> Result<(), String> {
         .map_err(|e| format!("keyring store: {}", e))
 }
 
+/// Recupera uma senha armazenada no keyring do sistema, ou `None` se não encontrada.
 pub fn get_password(server: &Server) -> Option<String> {
     match keyring::Entry::new(SERVICE, &account_key(server)) {
         Ok(entry) => entry.get_password().ok(),
@@ -20,13 +23,14 @@ pub fn get_password(server: &Server) -> Option<String> {
     }
 }
 
+/// Deleta uma senha armazenada no keyring do sistema. Sem efeito se não encontrada.
 pub fn delete_password(server: &Server) {
     if let Ok(entry) = keyring::Entry::new(SERVICE, &account_key(server)) {
         let _ = entry.delete_credential();
     }
 }
 
-/// Check if keyring is available on this system
+/// Verifica se o keyring do sistema está disponível.
 pub fn is_available() -> bool {
     keyring::Entry::new("lazyssh-test", "availability-check").is_ok()
 }

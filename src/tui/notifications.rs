@@ -11,23 +11,34 @@ use ratatui::{
 
 use super::theme::Theme;
 
+/// Tipo de notificação (determina a cor e duração).
 #[derive(Debug, Clone)]
 pub enum NotificationType {
+    /// Mensagem informativa (azul, 3s).
     Info,
+    /// Operação concluída com sucesso (verde, 3s).
     Success,
+    /// Aviso não-crítico (amarelo, 4s).
     Warning,
+    /// Erro que o usuário precisa ver (vermelho, 5s).
     Error,
 }
 
+/// Uma notificação individual com mensagem, tipo e tempo de expiração.
 #[derive(Debug, Clone)]
 pub struct Notification {
+    /// Texto da notificação.
     pub message: String,
+    /// Tipo da notificação (determina cor e duração).
     pub notification_type: NotificationType,
+    /// Instante em que a notificação foi criada.
     pub created_at: Instant,
+    /// Duração máxima antes de expirar.
     pub duration: Duration,
 }
 
 impl Notification {
+    /// Cria uma notificação informativa (expira em 3 segundos).
     pub fn info(message: &str) -> Self {
         Self {
             message: message.to_string(),
@@ -37,6 +48,7 @@ impl Notification {
         }
     }
 
+    /// Cria uma notificação de sucesso (expira em 3 segundos).
     pub fn success(message: &str) -> Self {
         Self {
             message: message.to_string(),
@@ -46,6 +58,7 @@ impl Notification {
         }
     }
 
+    /// Cria uma notificação de aviso (expira em 4 segundos).
     pub fn warning(message: &str) -> Self {
         Self {
             message: message.to_string(),
@@ -55,6 +68,7 @@ impl Notification {
         }
     }
 
+    /// Cria uma notificação de erro (expira em 5 segundos).
     pub fn error(message: &str) -> Self {
         Self {
             message: message.to_string(),
@@ -64,10 +78,12 @@ impl Notification {
         }
     }
 
+    /// Retorna `true` se a notificação já expirou.
     pub fn is_expired(&self) -> bool {
         self.created_at.elapsed() >= self.duration
     }
 
+    /// Retorna os segundos restantes antes da expiração.
     pub fn remaining_secs(&self) -> u64 {
         let elapsed = self.created_at.elapsed();
         if elapsed >= self.duration {
@@ -78,6 +94,7 @@ impl Notification {
     }
 }
 
+/// Fila de notificações exibidas na barra inferior da interface.
 #[derive(Debug)]
 pub struct NotificationQueue {
     notifications: VecDeque<Notification>,
@@ -85,6 +102,7 @@ pub struct NotificationQueue {
 }
 
 impl NotificationQueue {
+    /// Cria uma nova fila de notificações.
     pub fn new() -> Self {
         Self {
             notifications: VecDeque::new(),
@@ -92,6 +110,7 @@ impl NotificationQueue {
         }
     }
 
+    /// Adiciona uma notificação à fila. Remove as mais antigas se exceder o limite.
     pub fn push(&mut self, notification: Notification) {
         self.notifications.push_back(notification);
         // Manter apenas as notificações mais recentes
@@ -100,26 +119,32 @@ impl NotificationQueue {
         }
     }
 
+    /// Atalho para adicionar uma notificação informativa.
     pub fn info(&mut self, message: &str) {
         self.push(Notification::info(message));
     }
 
+    /// Atalho para adicionar uma notificação de sucesso.
     pub fn success(&mut self, message: &str) {
         self.push(Notification::success(message));
     }
 
+    /// Atalho para adicionar uma notificação de aviso.
     pub fn warning(&mut self, message: &str) {
         self.push(Notification::warning(message));
     }
 
+    /// Atalho para adicionar uma notificação de erro.
     pub fn error(&mut self, message: &str) {
         self.push(Notification::error(message));
     }
 
+    /// Remove todas as notificações que já expiraram.
     pub fn clear_expired(&mut self) {
         self.notifications.retain(|n| !n.is_expired());
     }
 
+    /// Retorna as notificações visíveis (não expiradas, no máximo `max_visible`).
     pub fn visible_notifications(&self) -> Vec<&Notification> {
         self.notifications
             .iter()
@@ -129,6 +154,7 @@ impl NotificationQueue {
     }
 }
 
+/// Renderiza as notificações visíveis na parte inferior da área informada.
 pub fn render_notifications(f: &mut Frame, queue: &NotificationQueue, area: Rect) {
     let visible = queue.visible_notifications();
     if visible.is_empty() {

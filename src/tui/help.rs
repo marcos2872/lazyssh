@@ -10,12 +10,16 @@ use std::time::Instant;
 use super::app::CurrentView;
 use super::theme::Theme;
 
+/// Uma entrada de atalho de teclado no modal de ajuda.
 pub struct HelpEntry {
+    /// Combinação de tecla(s).
     pub key: String,
+    /// Descrição da ação.
     pub desc: String,
 }
 
 impl HelpEntry {
+    /// Cria uma nova entrada de ajuda.
     pub fn new(key: &str, desc: &str) -> Self {
         Self {
             key: key.to_string(),
@@ -24,6 +28,7 @@ impl HelpEntry {
     }
 }
 
+/// Retorna a lista de atalhos de teclado para a visão informada.
 pub fn help_entries_for_view(view: &CurrentView) -> Vec<HelpEntry> {
     match view {
         CurrentView::ServerList => vec![
@@ -73,6 +78,7 @@ pub fn help_entries_for_view(view: &CurrentView) -> Vec<HelpEntry> {
     }
 }
 
+/// Retorna a dica de rodapé (atalhos principais) para a visão informada.
 pub fn footer_hint_for_view(view: &CurrentView) -> String {
     match view {
         CurrentView::ServerList => "j/k:Navegar  Enter:Conectar  a:Novo  ?:Ajuda".to_string(),
@@ -81,6 +87,7 @@ pub fn footer_hint_for_view(view: &CurrentView) -> String {
     }
 }
 
+/// Renderiza o modal de ajuda centralizado na tela com os atalhos da visão atual.
 pub fn render_help_modal(f: &mut Frame, view: &CurrentView) {
     let entries = help_entries_for_view(view);
     let area = f.area();
@@ -123,6 +130,7 @@ pub fn render_help_modal(f: &mut Frame, view: &CurrentView) {
     f.render_widget(help_text, modal_area);
 }
 
+/// Renderiza a barra de status/rodapé com dicas de teclado e tempo de atividade.
 pub fn render_status_bar(f: &mut Frame, area: Rect, view: &CurrentView, start_time: Instant) {
     let view_name = match view {
         CurrentView::ServerList => "ServerList",

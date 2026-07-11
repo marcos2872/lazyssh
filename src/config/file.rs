@@ -5,6 +5,10 @@ use std::path::PathBuf;
 use super::{AppConfig, Auth, Server};
 use crate::vault::keyring;
 
+/// Retorna o caminho para o arquivo de configuração TOML.
+///
+/// Usa a variável de ambiente `LAZYSSH_TEST_CONFIG_PATH` se definida (para testes),
+/// caso contrário resolve para `~/.config/lazyssh/servers.toml`.
 pub fn get_config_path() -> PathBuf {
     if let Ok(path) = std::env::var("LAZYSSH_TEST_CONFIG_PATH") {
         return PathBuf::from(path);
@@ -17,6 +21,10 @@ pub fn get_config_path() -> PathBuf {
     config_dir.join("servers.toml")
 }
 
+/// Carrega e analisa a configuração TOML do caminho informado.
+///
+/// Após a análise, tenta restaurar senhas do keyring do sistema
+/// para qualquer servidor cujo campo `vault_key` esteja vazio.
 pub fn load_config(path: &std::path::Path) -> Result<AppConfig> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config from {}", path.display()))?;
@@ -38,6 +46,11 @@ pub fn load_config(path: &std::path::Path) -> Result<AppConfig> {
     Ok(config)
 }
 
+/// Serializa a configuração em TOML e grava no disco.
+///
+/// Senhas são primeiro movidas para o keyring do sistema (quando disponível),
+/// depois removidas do TOML antes da escrita. Um `.toml.backup` é criado
+/// como rede de segurança antes de sobrescrever.
 pub fn save_config(config: &AppConfig, path: &std::path::Path) -> Result<()> {
     // Try to store passwords in keyring and clear them from TOML
     let mut config_for_save = config.clone();
@@ -72,6 +85,7 @@ pub fn save_config(config: &AppConfig, path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Carrega a configuração, ou retorna uma config vazia se o arquivo não existir.
 pub fn load_or_default() -> AppConfig {
     let path = get_config_path();
     if path.exists() {
@@ -81,6 +95,7 @@ pub fn load_or_default() -> AppConfig {
     }
 }
 
+/// Adiciona um novo servidor à configuração e persiste.
 pub fn add_server(server: Server) -> Result<()> {
     let path = get_config_path();
     let mut config = load_or_default();
@@ -89,6 +104,7 @@ pub fn add_server(server: Server) -> Result<()> {
     Ok(())
 }
 
+/// Remove um servidor por nome da configuração e deleta sua entrada no keyring.
 pub fn remove_server(name: &str) -> Result<()> {
     let path = get_config_path();
     let mut config = load_or_default();
@@ -103,6 +119,7 @@ pub fn remove_server(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Substitui os dados de um servidor existente pelo nome. Entradas antigas do keyring são limpas.
 pub fn update_server(name: &str, updated: Server) -> Result<()> {
     let path = get_config_path();
     let mut config = load_or_default();

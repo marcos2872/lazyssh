@@ -1,5 +1,14 @@
 use crate::config::models::{Auth, Server};
 
+/// Constrói os argumentos de linha de comando SSH para uma conexão de servidor.
+///
+/// Retorna `(programa, argumentos, senha)` onde:
+/// - `programa` é `"ssh"` para autenticação por chave ou `"sshpass"` para senha
+/// - `argumentos` contém o vetor completo de argumentos
+/// - `senha` é `Some(...)` para autenticação por senha (via variável `SSHPASS`)
+///
+/// Trata porta (`-p`), encaminhamento de agent (`-A`), proxy jump (`-J`)
+/// e arquivo de identidade (`-i`) baseado na configuração do servidor.
 pub fn build_ssh_args(server: &Server) -> (String, Vec<String>, Option<String>) {
     let mut ssh_args = vec![];
 
@@ -38,6 +47,11 @@ pub fn build_ssh_args(server: &Server) -> (String, Vec<String>, Option<String>) 
     ("ssh".to_string(), ssh_args, None)
 }
 
+/// Gera um subprocesso SSH com a configuração do servidor informado.
+///
+/// Envelopa `build_ssh_args` e configura redirecionamentos de stdin/stdout/stderr.
+/// Para autenticação por senha, define a variável de ambiente `SSHPASS` para que
+/// `sshpass -e` possa lê-la sem expor a senha na linha de comando.
 pub fn spawn_ssh_process(
     server: &Server,
     extra_args: Vec<String>,

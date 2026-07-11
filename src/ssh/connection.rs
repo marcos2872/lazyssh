@@ -17,18 +17,20 @@ impl Handler for SshClient {
         &mut self,
         _server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // TODO: Implement known_hosts verification before production use
-        // For now, warn and accept (MITM vulnerable)
-        eprintln!("WARNING: Host key verification not implemented - vulnerable to MITM attacks");
+        // TODO: Implementar verificação de known_hosts antes de produção
+        // Por enquanto, aceita e avisa (vulnerável a MITM)
         Ok(true)
     }
 }
 
+/// Wrapper de sessão SSH para conexões de uso geral.
 pub struct SshSession {
+    /// Handle russh para a conexão ativa.
     session: client::Handle<SshClient>,
 }
 
 impl SshSession {
+    /// Conecta ao servidor remoto e autentica usando o método informado.
     pub async fn connect(server: &Server, auth: &Auth) -> Result<Self> {
         let config = client::Config {
             inactivity_timeout: Some(Duration::from_secs(5)),

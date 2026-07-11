@@ -1,3 +1,5 @@
+//! Camada de interface de terminal — widgets ratatui, manipuladores de eventos e efeitos visuais.
+
 pub mod app;
 pub mod effects;
 pub mod handlers;

@@ -12,16 +12,23 @@ use crate::config::models::Server;
 use crate::sftp::{FileInfo, LocalFs};
 use super::theme::Theme;
 
+/// Progresso de uma transferência de arquivo em andamento.
 #[derive(Debug, Clone)]
 pub struct TransferProgress {
+    /// Nome do arquivo sendo transferido.
     pub file_name: String,
+    /// Bytes já transferidos.
     pub bytes_done: u64,
+    /// Total de bytes do arquivo.
     pub bytes_total: u64,
+    /// `true` se é upload, `false` se é download.
     pub is_upload: bool,
+    /// Instante em que a transferência começou.
     pub start_time: Instant,
 }
 
 impl TransferProgress {
+    /// Retorna a porcentagem de conclusão (0-100).
     pub fn percentage(&self) -> u8 {
         if self.bytes_total == 0 {
             0
@@ -30,10 +37,12 @@ impl TransferProgress {
         }
     }
 
+    /// Retorna `true` se a transferência está completa.
     pub fn is_complete(&self) -> bool {
         self.bytes_done >= self.bytes_total
     }
 
+    /// Estima o tempo restante em segundos, ou `None` se não puder calcular.
     pub fn eta_secs(&self) -> Option<u64> {
         if self.bytes_done == 0 || self.bytes_total == 0 {
             return None;
@@ -51,50 +60,84 @@ impl TransferProgress {
     }
 }
 
+/// Modo de entrada do SFTP — controla o que o campo de input faz.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SftpInputMode {
+    /// Sem input ativo.
     None,
+    /// Criando um novo diretório.
     Mkdir,
+    /// Renomeando um arquivo/diretório.
     Rename,
+    /// Alterando permissões (chmod) de um arquivo.
     Chmod,
+    /// Salvando o diretório atual como marcador.
     Bookmark,
 }
 
+/// Estado da transferência de arquivo.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransferState {
+    /// Nenhuma transferência em andamento.
     Idle,
+    /// Transferência em andamento.
     Transferring {
+        /// Nome do arquivo sendo transferido.
         file_name: String,
+        /// Total de bytes do arquivo.
         bytes_total: u64,
+        /// `true` se é upload, `false` se é download.
         is_upload: bool,
+        /// Instante em que a transferência começou.
         start_time: Instant,
     },
 }
 
+/// Estado completo do navegador SFTP dual-pane (local/remoto).
 #[derive(Debug)]
 pub struct SftpState {
+    /// Sistema de arquivos local sendo navegado.
     pub local: LocalFs,
+    /// Arquivos no diretório local atual.
     pub local_files: Vec<FileInfo>,
+    /// Arquivos no diretório remoto atual.
     pub remote_files: Vec<FileInfo>,
+    /// Caminho absoluto do diretório remoto atual.
     pub remote_path: String,
+    /// Índice do item selecionado no painel local.
     pub local_selected: usize,
+    /// Índice do item selecionado no painel remoto.
     pub remote_selected: usize,
+    /// Índices dos arquivos selecionados no painel local (multi-seleção).
     pub local_selected_files: Vec<usize>,
+    /// Índices dos arquivos selecionados no painel remoto (multi-seleção).
     pub remote_selected_files: Vec<usize>,
+    /// Painel atualmente focado (local ou remoto).
     pub focus_side: Side,
+    /// Mensagem de status exibida na barra inferior.
     pub status: String,
+    /// Progresso detalhado da transferência em andamento (opcional).
     pub transfer_progress: Option<TransferProgress>,
+    /// Estado da transferência (Idle ou Transferring).
     pub transfer_state: TransferState,
+    /// ID da sessão SFTP remota.
     pub session_id: Option<String>,
+    /// Modo de input ativo (Mkdir, Rename, Chmod, Bookmark ou None).
     pub input_mode: SftpInputMode,
+    /// Conteúdo do campo de input para mkdir/rename/chmod/bookmark.
     pub input_buffer: String,
+    /// Posição do cursor no campo de input (para navegação com setas).
     pub input_cursor: usize,
+    /// Instante em que a transferência começou (para timer).
     pub transfer_start: Option<std::time::Instant>,
 }
 
+/// Painel (lado) do navegador SFTP.
 #[derive(Debug, PartialEq)]
 pub enum Side {
+    /// Painel local (filesystem da máquina).
     Local,
+    /// Painel remoto (filesystem do servidor SSH).
     Remote,
 }
 
