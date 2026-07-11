@@ -9,7 +9,7 @@ use super::notifications::NotificationQueue;
 use super::sftp_browser::SftpState;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum EditField {
+pub enum FormField {
     Name,
     Host,
     Port,
@@ -19,180 +19,18 @@ pub enum EditField {
     Passphrase,
     Password,
     Tags,
-}
-
-#[derive(Debug, Clone)]
-pub struct EditState {
-    pub field: EditField,
-    pub name: String,
-    pub host: String,
-    pub port: String,
-    pub user: String,
-    pub auth_type: String,
-    pub key_path: String,
-    pub passphrase: String,
-    pub password: String,
-    pub tags: String,
-    pub server_index: usize,
-}
-
-impl EditState {
-    pub fn from_server(server: &Server, index: usize) -> Self {
-        let (auth_type, key_path, passphrase) = match &server.auth {
-            Auth::Key { path, passphrase } => (
-                "key".to_string(),
-                path.clone(),
-                passphrase.clone().unwrap_or_default(),
-            ),
-            Auth::Password { .. } => ("password".to_string(), String::new(), String::new()),
-        };
-        Self {
-            field: EditField::Name,
-            name: server.name.clone(),
-            host: server.host.clone(),
-            port: server.port.to_string(),
-            user: server.user.clone(),
-            auth_type,
-            key_path,
-            passphrase,
-            password: String::new(),
-            tags: server.tags.join(", "),
-            server_index: index,
-        }
-    }
-
-    pub fn is_key_auth(&self) -> bool {
-        self.auth_type.to_lowercase() == "key"
-    }
-
-    pub fn current_value(&self) -> &str {
-        match self.field {
-            EditField::Name => &self.name,
-            EditField::Host => &self.host,
-            EditField::Port => &self.port,
-            EditField::User => &self.user,
-            EditField::AuthType => &self.auth_type,
-            EditField::KeyPath => &self.key_path,
-            EditField::Passphrase => &self.passphrase,
-            EditField::Password => &self.password,
-            EditField::Tags => &self.tags,
-        }
-    }
-
-    pub fn current_value_mut(&mut self) -> &mut String {
-        match self.field {
-            EditField::Name => &mut self.name,
-            EditField::Host => &mut self.host,
-            EditField::Port => &mut self.port,
-            EditField::User => &mut self.user,
-            EditField::AuthType => &mut self.auth_type,
-            EditField::KeyPath => &mut self.key_path,
-            EditField::Passphrase => &mut self.passphrase,
-            EditField::Password => &mut self.password,
-            EditField::Tags => &mut self.tags,
-        }
-    }
-
-    pub fn next_field(&mut self) {
-        self.field = if self.is_key_auth() {
-            match self.field {
-                EditField::Name => EditField::Host,
-                EditField::Host => EditField::Port,
-                EditField::Port => EditField::User,
-                EditField::User => EditField::AuthType,
-                EditField::AuthType => EditField::KeyPath,
-                EditField::KeyPath => EditField::Passphrase,
-                EditField::Passphrase => EditField::Tags,
-                EditField::Tags => EditField::Name,
-                _ => EditField::Name,
-            }
-        } else {
-            match self.field {
-                EditField::Name => EditField::Host,
-                EditField::Host => EditField::Port,
-                EditField::Port => EditField::User,
-                EditField::User => EditField::AuthType,
-                EditField::AuthType => EditField::Password,
-                EditField::Password => EditField::Tags,
-                EditField::Tags => EditField::Name,
-                _ => EditField::Name,
-            }
-        };
-    }
-
-    pub fn prev_field(&mut self) {
-        self.field = if self.is_key_auth() {
-            match self.field {
-                EditField::Name => EditField::Tags,
-                EditField::Host => EditField::Name,
-                EditField::Port => EditField::Host,
-                EditField::User => EditField::Port,
-                EditField::AuthType => EditField::User,
-                EditField::KeyPath => EditField::AuthType,
-                EditField::Passphrase => EditField::KeyPath,
-                EditField::Tags => EditField::Passphrase,
-                _ => EditField::Name,
-            }
-        } else {
-            match self.field {
-                EditField::Name => EditField::Tags,
-                EditField::Host => EditField::Name,
-                EditField::Port => EditField::Host,
-                EditField::User => EditField::Port,
-                EditField::AuthType => EditField::User,
-                EditField::Password => EditField::AuthType,
-                EditField::Tags => EditField::Password,
-                _ => EditField::Name,
-            }
-        };
-    }
-
-    pub fn build_auth(&self) -> Auth {
-        if self.auth_type.to_lowercase() == "password" {
-            Auth::Password {
-                vault_key: self.password.clone(),
-            }
-        } else {
-            Auth::Key {
-                path: if self.key_path.is_empty() {
-                    "~/.ssh/id_rsa".to_string()
-                } else {
-                    self.key_path.clone()
-                },
-                passphrase: if self.passphrase.is_empty() {
-                    None
-                } else {
-                    Some(self.passphrase.clone())
-                },
-            }
-        }
-    }
-
-    pub fn toggle_auth_type(&mut self) {
-        if self.auth_type == "key" {
-            self.auth_type = "password".to_string();
-        } else {
-            self.auth_type = "key".to_string();
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum InsertField {
-    Name,
-    Host,
-    Port,
-    User,
-    AuthType,
-    KeyPath,
-    Passphrase,
-    Password,
-    Tags,
+pub enum FormMode {
+    Insert,
+    Edit { server_index: usize },
 }
 
 #[derive(Debug, Clone)]
-pub struct InsertState {
-    pub field: InsertField,
+pub struct FormState {
+    pub field: FormField,
+    pub mode: FormMode,
     pub name: String,
     pub host: String,
     pub port: String,
@@ -204,10 +42,11 @@ pub struct InsertState {
     pub tags: String,
 }
 
-impl InsertState {
-    pub fn new() -> Self {
+impl FormState {
+    pub fn new_insert() -> Self {
         Self {
-            field: InsertField::Name,
+            field: FormField::Name,
+            mode: FormMode::Insert,
             name: String::new(),
             host: String::new(),
             port: "22".to_string(),
@@ -220,61 +59,92 @@ impl InsertState {
         }
     }
 
+    pub fn new_edit(server: &Server, index: usize) -> Self {
+        let (auth_type, key_path, passphrase) = match &server.auth {
+            Auth::Key { path, passphrase } => (
+                "key".to_string(),
+                path.clone(),
+                passphrase.clone().unwrap_or_default(),
+            ),
+            Auth::Password { .. } => ("password".to_string(), String::new(), String::new()),
+        };
+        Self {
+            field: FormField::Name,
+            mode: FormMode::Edit { server_index: index },
+            name: server.name.clone(),
+            host: server.host.clone(),
+            port: server.port.to_string(),
+            user: server.user.clone(),
+            auth_type,
+            key_path,
+            passphrase,
+            password: String::new(),
+            tags: server.tags.join(", "),
+        }
+    }
+
+    pub fn server_index(&self) -> Option<usize> {
+        match self.mode {
+            FormMode::Edit { server_index } => Some(server_index),
+            FormMode::Insert => None,
+        }
+    }
+
     pub fn is_key_auth(&self) -> bool {
         self.auth_type.to_lowercase() == "key"
     }
 
     pub fn current_value(&self) -> &str {
         match self.field {
-            InsertField::Name => &self.name,
-            InsertField::Host => &self.host,
-            InsertField::Port => &self.port,
-            InsertField::User => &self.user,
-            InsertField::AuthType => &self.auth_type,
-            InsertField::KeyPath => &self.key_path,
-            InsertField::Passphrase => &self.passphrase,
-            InsertField::Password => &self.password,
-            InsertField::Tags => &self.tags,
+            FormField::Name => &self.name,
+            FormField::Host => &self.host,
+            FormField::Port => &self.port,
+            FormField::User => &self.user,
+            FormField::AuthType => &self.auth_type,
+            FormField::KeyPath => &self.key_path,
+            FormField::Passphrase => &self.passphrase,
+            FormField::Password => &self.password,
+            FormField::Tags => &self.tags,
         }
     }
 
     pub fn current_value_mut(&mut self) -> &mut String {
         match self.field {
-            InsertField::Name => &mut self.name,
-            InsertField::Host => &mut self.host,
-            InsertField::Port => &mut self.port,
-            InsertField::User => &mut self.user,
-            InsertField::AuthType => &mut self.auth_type,
-            InsertField::KeyPath => &mut self.key_path,
-            InsertField::Passphrase => &mut self.passphrase,
-            InsertField::Password => &mut self.password,
-            InsertField::Tags => &mut self.tags,
+            FormField::Name => &mut self.name,
+            FormField::Host => &mut self.host,
+            FormField::Port => &mut self.port,
+            FormField::User => &mut self.user,
+            FormField::AuthType => &mut self.auth_type,
+            FormField::KeyPath => &mut self.key_path,
+            FormField::Passphrase => &mut self.passphrase,
+            FormField::Password => &mut self.password,
+            FormField::Tags => &mut self.tags,
         }
     }
 
     pub fn next_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
-                InsertField::Name => InsertField::Host,
-                InsertField::Host => InsertField::Port,
-                InsertField::Port => InsertField::User,
-                InsertField::User => InsertField::AuthType,
-                InsertField::AuthType => InsertField::KeyPath,
-                InsertField::KeyPath => InsertField::Passphrase,
-                InsertField::Passphrase => InsertField::Tags,
-                InsertField::Tags => InsertField::Name,
-                _ => InsertField::Name,
+                FormField::Name => FormField::Host,
+                FormField::Host => FormField::Port,
+                FormField::Port => FormField::User,
+                FormField::User => FormField::AuthType,
+                FormField::AuthType => FormField::KeyPath,
+                FormField::KeyPath => FormField::Passphrase,
+                FormField::Passphrase => FormField::Tags,
+                FormField::Tags => FormField::Name,
+                _ => FormField::Name,
             }
         } else {
             match self.field {
-                InsertField::Name => InsertField::Host,
-                InsertField::Host => InsertField::Port,
-                InsertField::Port => InsertField::User,
-                InsertField::User => InsertField::AuthType,
-                InsertField::AuthType => InsertField::Password,
-                InsertField::Password => InsertField::Tags,
-                InsertField::Tags => InsertField::Name,
-                _ => InsertField::Name,
+                FormField::Name => FormField::Host,
+                FormField::Host => FormField::Port,
+                FormField::Port => FormField::User,
+                FormField::User => FormField::AuthType,
+                FormField::AuthType => FormField::Password,
+                FormField::Password => FormField::Tags,
+                FormField::Tags => FormField::Name,
+                _ => FormField::Name,
             }
         };
     }
@@ -282,26 +152,26 @@ impl InsertState {
     pub fn prev_field(&mut self) {
         self.field = if self.is_key_auth() {
             match self.field {
-                InsertField::Name => InsertField::Tags,
-                InsertField::Host => InsertField::Name,
-                InsertField::Port => InsertField::Host,
-                InsertField::User => InsertField::Port,
-                InsertField::AuthType => InsertField::User,
-                InsertField::KeyPath => InsertField::AuthType,
-                InsertField::Passphrase => InsertField::KeyPath,
-                InsertField::Tags => InsertField::Passphrase,
-                _ => InsertField::Name,
+                FormField::Name => FormField::Tags,
+                FormField::Host => FormField::Name,
+                FormField::Port => FormField::Host,
+                FormField::User => FormField::Port,
+                FormField::AuthType => FormField::User,
+                FormField::KeyPath => FormField::AuthType,
+                FormField::Passphrase => FormField::KeyPath,
+                FormField::Tags => FormField::Passphrase,
+                _ => FormField::Name,
             }
         } else {
             match self.field {
-                InsertField::Name => InsertField::Tags,
-                InsertField::Host => InsertField::Name,
-                InsertField::Port => InsertField::Host,
-                InsertField::User => InsertField::Port,
-                InsertField::AuthType => InsertField::User,
-                InsertField::Password => InsertField::AuthType,
-                InsertField::Tags => InsertField::Password,
-                _ => InsertField::Name,
+                FormField::Name => FormField::Tags,
+                FormField::Host => FormField::Name,
+                FormField::Port => FormField::Host,
+                FormField::User => FormField::Port,
+                FormField::AuthType => FormField::User,
+                FormField::Password => FormField::AuthType,
+                FormField::Tags => FormField::Password,
+                _ => FormField::Name,
             }
         };
     }
@@ -383,8 +253,7 @@ pub struct App {
     pub input: String,
     pub should_quit: bool,
     pub sftp_state: Option<SftpState>,
-    pub insert_state: Option<InsertState>,
-    pub edit_state: Option<EditState>,
+    pub form_state: Option<FormState>,
     pub notifications: NotificationQueue,
     pub effects: AppEffects,
     pub ssh_service: SshService,
@@ -415,8 +284,7 @@ impl App {
             input: String::new(),
             should_quit: false,
             sftp_state: None,
-            insert_state: None,
-            edit_state: None,
+            form_state: None,
             notifications,
             effects: AppEffects::new(),
             ssh_service: SshService::new(),
@@ -898,10 +766,10 @@ mod tests {
         assert!(app.selected_server().is_none());
     }
 
-    // --- EditState ---
+    // --- FormState (Edit) ---
 
     #[test]
-    fn test_edit_state_from_key_server() {
+    fn test_form_state_edit_from_key_server() {
         let server = Server {
             name: "editme".into(), host: "10.0.0.1".into(), port: 2222,
             user: "admin".into(),
@@ -911,19 +779,18 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-
-
         };
-        let es = EditState::from_server(&server, 0);
-        assert_eq!(es.name, "editme");
-        assert_eq!(es.port, "2222");
-        assert_eq!(es.key_path, "~/.ssh/id_ed25519");
-        assert_eq!(es.passphrase, "secret");
-        assert!(es.is_key_auth());
+        let fs = FormState::new_edit(&server, 0);
+        assert_eq!(fs.name, "editme");
+        assert_eq!(fs.port, "2222");
+        assert_eq!(fs.key_path, "~/.ssh/id_ed25519");
+        assert_eq!(fs.passphrase, "secret");
+        assert!(fs.is_key_auth());
+        assert_eq!(fs.server_index(), Some(0));
     }
 
     #[test]
-    fn test_edit_state_from_password_server() {
+    fn test_form_state_edit_from_password_server() {
         let server = Server {
             name: "p".into(), host: "h".into(), port: 22, user: "u".into(),
             auth: Auth::Password { vault_key: "vk".into() },
@@ -932,78 +799,71 @@ mod tests {
             bookmarks: vec![],
             agent_forwarding: false,
             proxy_jump: None,
-
-
         };
-        let es = EditState::from_server(&server, 0);
-        assert!(!es.is_key_auth());
-        assert_eq!(es.auth_type, "password");
+        let fs = FormState::new_edit(&server, 0);
+        assert!(!fs.is_key_auth());
+        assert_eq!(fs.auth_type, "password");
     }
 
     #[test]
-    fn test_edit_state_current_value() {
-        let mut es = EditState {
-            field: EditField::Name, name: "n".into(), host: String::new(),
+    fn test_form_state_current_value() {
+        let mut fs = FormState {
+            field: FormField::Name, mode: FormMode::Insert, name: "n".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
-            server_index: 0,
         };
-        assert_eq!(es.current_value(), "n");
-        es.field = EditField::Port;
-        assert_eq!(es.current_value(), "22");
+        assert_eq!(fs.current_value(), "n");
+        fs.field = FormField::Port;
+        assert_eq!(fs.current_value(), "22");
     }
 
     #[test]
-    fn test_edit_state_next_field_key() {
-        let mut es = EditState {
-            field: EditField::Name, name: String::new(), host: String::new(),
+    fn test_form_state_next_field_key() {
+        let mut fs = FormState {
+            field: FormField::Name, mode: FormMode::Insert, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
-            server_index: 0,
         };
         // Full cycle through 8 key-auth fields returns to Name
-        for _ in 0..8 { es.next_field(); }
-        assert_eq!(es.field, EditField::Name);
+        for _ in 0..8 { fs.next_field(); }
+        assert_eq!(fs.field, FormField::Name);
     }
 
     #[test]
-    fn test_edit_state_next_field_password() {
-        let mut es = EditState {
-            field: EditField::Name, name: String::new(), host: String::new(),
+    fn test_form_state_next_field_password() {
+        let mut fs = FormState {
+            field: FormField::Name, mode: FormMode::Insert, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "password".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
-            server_index: 0,
         };
-        es.next_field();
-        assert_eq!(es.field, EditField::Host);
+        fs.next_field();
+        assert_eq!(fs.field, FormField::Host);
     }
 
     #[test]
-    fn test_edit_state_prev_field() {
-        let mut es = EditState {
-            field: EditField::Passphrase, name: String::new(), host: String::new(),
+    fn test_form_state_prev_field() {
+        let mut fs = FormState {
+            field: FormField::Passphrase, mode: FormMode::Insert, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
-            server_index: 0,
         };
-        es.prev_field();
-        assert_eq!(es.field, EditField::KeyPath);
+        fs.prev_field();
+        assert_eq!(fs.field, FormField::KeyPath);
     }
 
     #[test]
-    fn test_edit_state_build_auth_key() {
-        let es = EditState {
-            field: EditField::Name, name: "n".into(), host: String::new(),
+    fn test_form_state_build_auth_key() {
+        let fs = FormState {
+            field: FormField::Name, mode: FormMode::Insert, name: "n".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: "~/.ssh/custom".into(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
-            server_index: 0,
         };
-        match es.build_auth() {
+        match fs.build_auth() {
             Auth::Key { path, passphrase } => {
                 assert_eq!(path, "~/.ssh/custom");
                 assert!(passphrase.is_none());
@@ -1013,84 +873,83 @@ mod tests {
     }
 
     #[test]
-    fn test_edit_state_build_auth_password() {
-        let es = EditState {
-            field: EditField::Password, name: String::new(), host: String::new(),
+    fn test_form_state_build_auth_password() {
+        let fs = FormState {
+            field: FormField::Password, mode: FormMode::Insert, name: String::new(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "password".into(),
             key_path: String::new(), passphrase: String::new(), password: "vaultkey".into(),
             tags: String::new(),
-            server_index: 0,
         };
-        match es.build_auth() {
+        match fs.build_auth() {
             Auth::Password { vault_key } => assert_eq!(vault_key, "vaultkey"),
             _ => panic!("expected Password auth"),
         }
     }
 
     #[test]
-    fn test_edit_state_current_value_mut() {
-        let mut es = EditState {
-            field: EditField::Name, name: "old".into(), host: String::new(),
-            port: "22".into(), user: String::new(), auth_type: "key".into(),
-            key_path: String::new(), passphrase: String::new(), password: String::new(),
-            tags: String::new(),
-            server_index: 0,
-        };
-        *es.current_value_mut() = "new".to_string();
-        assert_eq!(es.name, "new");
-    }
-
-    // --- InsertState ---
-
-    #[test]
-    fn test_insert_state_new_has_defaults() {
-        let is = InsertState::new();
-        assert_eq!(is.port, "22");
-        assert_eq!(is.user, "root");
-        assert_eq!(is.auth_type, "key");
-        assert!(is.is_key_auth());
-        assert_eq!(is.field, InsertField::Name);
-    }
-
-    #[test]
-    fn test_insert_state_next_field() {
-        let mut is = InsertState::new();
-        is.next_field();
-        assert_eq!(is.field, InsertField::Host);
-    }
-
-    #[test]
-    fn test_insert_state_prev_field() {
-        let mut is = InsertState {
-            field: InsertField::Passphrase, name: String::new(), host: String::new(),
+    fn test_form_state_current_value_mut() {
+        let mut fs = FormState {
+            field: FormField::Name, mode: FormMode::Insert, name: "old".into(), host: String::new(),
             port: "22".into(), user: String::new(), auth_type: "key".into(),
             key_path: String::new(), passphrase: String::new(), password: String::new(),
             tags: String::new(),
         };
-        is.prev_field();
-        assert_eq!(is.field, InsertField::KeyPath);
+        *fs.current_value_mut() = "new".to_string();
+        assert_eq!(fs.name, "new");
+    }
+
+    // --- FormState (Insert) ---
+
+    #[test]
+    fn test_form_state_insert_new_has_defaults() {
+        let fs = FormState::new_insert();
+        assert_eq!(fs.port, "22");
+        assert_eq!(fs.user, "root");
+        assert_eq!(fs.auth_type, "key");
+        assert!(fs.is_key_auth());
+        assert_eq!(fs.field, FormField::Name);
+        assert_eq!(fs.server_index(), None);
     }
 
     #[test]
-    fn test_insert_state_current_value() {
-        let is = InsertState::new();
-        assert_eq!(is.current_value(), "");
-        let mut is2 = InsertState::new();
-        is2.field = InsertField::Port;
-        assert_eq!(is2.current_value(), "22");
+    fn test_form_state_insert_next_field() {
+        let mut fs = FormState::new_insert();
+        fs.next_field();
+        assert_eq!(fs.field, FormField::Host);
     }
 
     #[test]
-    fn test_insert_state_current_value_mut() {
-        let mut is = InsertState::new();
-        *is.current_value_mut() = "newval".to_string();
-        assert_eq!(is.name, "newval");
+    fn test_form_state_insert_prev_field() {
+        let mut fs = FormState {
+            field: FormField::Passphrase, mode: FormMode::Insert, name: String::new(), host: String::new(),
+            port: "22".into(), user: String::new(), auth_type: "key".into(),
+            key_path: String::new(), passphrase: String::new(), password: String::new(),
+            tags: String::new(),
+        };
+        fs.prev_field();
+        assert_eq!(fs.field, FormField::KeyPath);
     }
 
     #[test]
-    fn test_insert_state_build_auth_key_default_path() {
-        let is = InsertState::new();
-        match is.build_auth() {
+    fn test_form_state_insert_current_value() {
+        let fs = FormState::new_insert();
+        assert_eq!(fs.current_value(), "");
+        let mut fs2 = FormState::new_insert();
+        fs2.field = FormField::Port;
+        assert_eq!(fs2.current_value(), "22");
+    }
+
+    #[test]
+    fn test_form_state_insert_current_value_mut() {
+        let mut fs = FormState::new_insert();
+        *fs.current_value_mut() = "newval".to_string();
+        assert_eq!(fs.name, "newval");
+    }
+
+    #[test]
+    fn test_form_state_insert_build_auth_key_default_path() {
+        let fs = FormState::new_insert();
+        match fs.build_auth() {
             Auth::Key { path, passphrase } => {
                 assert_eq!(path, "~/.ssh/id_rsa");
                 assert!(passphrase.is_none());
