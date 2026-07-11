@@ -46,47 +46,7 @@ fn leave_tui() -> Result<()> {
 }
 
 fn native_shell_command(server: &config::Server) -> (String, Vec<String>) {
-    let mut ssh_args = vec![];
-
-    if server.port != 22 {
-        ssh_args.push("-p".to_string());
-        ssh_args.push(server.port.to_string());
-    }
-
-    if server.agent_forwarding {
-        ssh_args.push("-A".to_string());
-    }
-
-    if let Some(ref jump) = server.proxy_jump {
-        if !jump.is_empty() {
-            ssh_args.push("-J".to_string());
-            ssh_args.push(jump.clone());
-        }
-    }
-
-    match &server.auth {
-        crate::config::models::Auth::Key { path, .. } => {
-            let expanded = shellexpand::tilde(path).into_owned();
-            ssh_args.push("-i".to_string());
-            ssh_args.push(expanded);
-        }
-        crate::config::models::Auth::Password { vault_key } => {
-            if !vault_key.is_empty() {
-                let mut args = vec![
-                    "sshpass".to_string(),
-                    "-p".to_string(),
-                    vault_key.clone(),
-                    "ssh".to_string(),
-                ];
-                args.append(&mut ssh_args);
-                args.push(format!("{}@{}", server.user, server.host));
-                return ("sshpass".to_string(), args);
-            }
-        }
-    }
-
-    ssh_args.push(format!("{}@{}", server.user, server.host));
-    ("ssh".to_string(), ssh_args)
+    crate::ssh::args::build_ssh_args(server)
 }
 
 fn run_native_shell_handoff(server: &config::Server) -> Result<ExitStatus> {
@@ -233,7 +193,7 @@ async fn main() -> Result<()> {
                         let area = f.area();
                         let is_key = form.is_key_auth();
                         let is_insert = matches!(form.mode, tui::app::FormMode::Insert);
-                        let height: u16 = if is_key { if is_insert { 16 } else { 17 } } else { if is_insert { 14 } else { 15 } };
+                        let height: u16 = if is_key { 16 } else { 14 };
                         let width: u16 = 50;
                         let x = (area.width - width) / 2;
                         let y = (area.height - height) / 2;
@@ -1003,33 +963,13 @@ async fn main() -> Result<()> {
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, local, remote) in &paths_clone {
                                                     // Use: cat local | ssh user@host 'cat > remote'
-                                                    let mut ssh_args = vec![];
-                                                    if server_clone.port != 22 {
-                                                        ssh_args.push("-p".to_string());
-                                                        ssh_args.push(server_clone.port.to_string());
-                                                    }
-                                                    match &server_clone.auth {
-                                                        crate::config::models::Auth::Key { path, .. } => {
-                                                            let expanded = shellexpand::tilde(path).into_owned();
-                                                            ssh_args.push("-i".to_string());
-                                                            ssh_args.push(expanded);
-                                                        }
-                                                        crate::config::models::Auth::Password { .. } => {}
-                                                    }
-                                                    ssh_args.push(format!("{}@{}", server_clone.user, server_clone.host));
-                                                    ssh_args.push(format!("cat > {}", remote));
-                                                    let (cmd, final_args) = match &server_clone.auth {
-                                                        crate::config::models::Auth::Password { vault_key } if !vault_key.is_empty() => {
-                                                            let mut a = vec!["-p".to_string(), vault_key.clone(), "ssh".to_string()];
-                                                            a.extend(ssh_args);
-                                                            ("sshpass".to_string(), a)
-                                                        }
-                                                        _ => ("ssh".to_string(), ssh_args),
-                                                    };
+                                                    let (ref ssh_cmd, ref base_args) = crate::ssh::args::build_ssh_args(&server_clone);
+                                                    let mut final_args = base_args.clone();
+                                                    final_args.push(format!("cat > {}", remote));
                                                     let local_file = std::fs::File::open(local)
                                                         .map_err(|e| format!("Erro ao ler {}: {}", local, e));
                                                     let child = match local_file {
-                                                        Ok(f) => std::process::Command::new(&cmd)
+                                                        Ok(f) => std::process::Command::new(ssh_cmd)
                                                             .args(&final_args)
                                                             .stdin(f)
                                                             .stdout(std::process::Stdio::piped())
@@ -1116,30 +1056,10 @@ async fn main() -> Result<()> {
                                             app.sftp_op_rx = Some(result_rx2);
                                             tokio::task::spawn_blocking(move || {
                                                 for (name, remote, local) in &paths_clone {
-                                                    let mut ssh_args = vec![];
-                                                    if server_clone.port != 22 {
-                                                        ssh_args.push("-p".to_string());
-                                                        ssh_args.push(server_clone.port.to_string());
-                                                    }
-                                                    match &server_clone.auth {
-                                                        crate::config::models::Auth::Key { path, .. } => {
-                                                            let expanded = shellexpand::tilde(path).into_owned();
-                                                            ssh_args.push("-i".to_string());
-                                                            ssh_args.push(expanded);
-                                                        }
-                                                        crate::config::models::Auth::Password { .. } => {}
-                                                    }
-                                                    ssh_args.push(format!("{}@{}", server_clone.user, server_clone.host));
-                                                    ssh_args.push(format!("cat {}", remote));
-                                                    let (cmd, final_args) = match &server_clone.auth {
-                                                        crate::config::models::Auth::Password { vault_key } if !vault_key.is_empty() => {
-                                                            let mut a = vec!["-p".to_string(), vault_key.clone(), "ssh".to_string()];
-                                                            a.extend(ssh_args);
-                                                            ("sshpass".to_string(), a)
-                                                        }
-                                                        _ => ("ssh".to_string(), ssh_args),
-                                                    };
-                                                    let child = std::process::Command::new(&cmd)
+                                                    let (ref ssh_cmd, ref base_args) = crate::ssh::args::build_ssh_args(&server_clone);
+                                                    let mut final_args = base_args.clone();
+                                                    final_args.push(format!("cat {}", remote));
+                                                    let child = std::process::Command::new(ssh_cmd)
                                                         .args(&final_args)
                                                         .stdout(std::process::Stdio::piped())
                                                         .stderr(std::process::Stdio::piped())
