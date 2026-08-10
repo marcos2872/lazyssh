@@ -336,7 +336,8 @@ mod tests {
         };
         let (cmd, args, pw) = native_shell_command(&server);
         assert_eq!(cmd, "sshpass");
-        assert_eq!(args[0], "ssh");
+        assert_eq!(args[0], "-e");
+        assert_eq!(args[1], "ssh");
         assert!(args.contains(&"root@example.com".to_string()));
         assert_eq!(pw, Some("secret123".into()));
         // Password must NOT appear in args

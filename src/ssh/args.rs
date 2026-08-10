@@ -38,6 +38,7 @@ pub fn build_ssh_args(server: &Server) -> (String, Vec<String>, Option<String>) 
             if !vault_key.is_empty() {
                 ssh_args.push(format!("{}@{}", server.user, server.host));
                 ssh_args.insert(0, "ssh".to_string());
+                ssh_args.insert(0, "-e".to_string());
                 return ("sshpass".to_string(), ssh_args, Some(vault_key.clone()));
             }
         }
@@ -122,7 +123,8 @@ mod tests {
         });
         let (cmd, args, pw) = build_ssh_args(&server);
         assert_eq!(cmd, "sshpass");
-        assert_eq!(args[0], "ssh");
+        assert_eq!(args[0], "-e");
+        assert_eq!(args[1], "ssh");
         assert!(args.contains(&"root@example.com".to_string()));
         assert_eq!(pw, Some("secret123".into()));
         // Password must NOT appear in args
